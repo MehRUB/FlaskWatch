@@ -26,7 +26,7 @@ RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', 're_KEvsQZtd_rmWotYoRiX9Li
 MAIL_FROM          = os.environ.get('MAIL_FROM', 'FlaskTube <onboarding@resend.dev>')
 SITE_URL           = os.environ.get('SITE_URL', 'https://flasktube.up.railway.app')
 GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', 'AIzaSyAKgsxs-jW2fhB02MTUHpmKYdBoSh8FFdA')
-ADMIN_IDS          = {1}
+ADMIN_EMAIL        = 'mehdiprodmus@gmail.com'  # only this email gets admin
 
 
 # ─── Database ─────────────────────────────────────────────────────────────────
@@ -140,8 +140,9 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if session.get('user_id') not in ADMIN_IDS:
-            flash('Admin access required.', 'error')
+        user = current_user()
+        if not user or user['email'] != ADMIN_EMAIL or not user['is_verified']:
+            flash('Access denied.', 'error')
             return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated
@@ -151,7 +152,8 @@ def current_user():
     return get_db().execute('SELECT * FROM users WHERE id=?', (session['user_id'],)).fetchone()
 
 def is_admin():
-    return session.get('user_id') in ADMIN_IDS
+    user = current_user()
+    return bool(user and user['email'] == ADMIN_EMAIL and user['is_verified'])
 
 def allowed_video(fn): return '.' in fn and fn.rsplit('.',1)[1].lower() in ALLOWED_VIDEO
 def allowed_image(fn): return '.' in fn and fn.rsplit('.',1)[1].lower() in ALLOWED_IMAGE
@@ -441,8 +443,7 @@ def search():
 def upload():
     user = current_user()
     if not user['is_verified']:
-        flash('Please verify your email before uploading. Check your inbox or resend below.', 'error')
-        return redirect(url_for('resend_verification'))
+        return render_template('verify_required.html')
 
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
@@ -696,8 +697,9 @@ def admin_dismiss_report(report_id):
 @app.route('/admin/ban-user/<int:user_id>', methods=['POST'])
 @admin_required
 def admin_ban_user(user_id):
-    if user_id in ADMIN_IDS:
-        flash('Cannot ban an admin.', 'error')
+    target = get_db().execute('SELECT email FROM users WHERE id=?', (user_id,)).fetchone()
+    if target and target['email'] == ADMIN_EMAIL:
+        flash('Cannot ban the admin.', 'error')
         return redirect(url_for('admin'))
     db = get_db()
     db.execute('UPDATE videos SET is_removed=1 WHERE user_id=?', (user_id,))
