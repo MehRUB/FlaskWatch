@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% block title %}{{ video.title }} - FlaskTube{% endblock %}
+{% block content %}
+<div class="watch-layout">
+  <div class="watch-main">
+
+    <!-- Player -->
+    <div class="player-wrap">
+      <video controls autoplay class="video-player" preload="metadata">
+        <source src="{{ url_for('uploaded_file', filename=video.filename) }}">
+        Your browser does not support video playback.
+      </video>
+    </div>
+
+    <h1 class="watch-title">{{ video.title }}</h1>
+
+    <!-- Meta bar -->
+    <div class="watch-meta-bar">
+      <div class="channel-info">
+        <a href="{{ url_for('channel', channel_id=video.channel_id) }}" class="channel-link">
+          {% if video.avatar %}
+            <img src="{{ url_for('uploaded_file', filename=video.avatar) }}" class="avatar-md">
+          {% else %}
+            <div class="avatar-md avatar-placeholder">
+              {{ (video.channel_name or video.username)[0].upper() }}
+            </div>
+          {% endif %}
+          <div>
+            <div class="channel-name">{{ video.channel_name or video.username }}</div>
+            <div class="sub-count" id="sub-count-txt">{{ video.sub_count }} subscriber{{ 's' if video.sub_count != 1 else '' }}</div>
+          </div>
+        </a>
+        {% if session.user_id and session.user_id != video.channel_id %}
+          <button class="sub-btn {% if subbed %}subbed{% endif %}" id="sub-btn"
+                  onclick="toggleSub({{ video.channel_id }})">
+            {{ 'Subscribed' if subbed else 'Subscribe' }}
+          </button>
+        {% elif not session.user_id %}
+          <a href="{{ url_for('login') }}" class="sub-btn">Subscribe</a>
+        {% endif %}
+      </div>
+
+      <div class="action-btns">
+        <button class="action-btn {% if liked %}active{% endif %}" id="like-btn"
+                onclick="toggleLike('{{ video.uuid }}')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/>
+          </svg>
+          <span id="like-count">{{ video.like_count }}</span>
+        </button>
+
+        <button class="action-btn {% if saved %}active{% endif %}" id="save-btn"
+                onclick="toggleSave('{{ video.uuid }}')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+          </svg>
+          <span id="save-label">{{ 'Saved' if saved else 'Save' }}</span>
+        </button>
+
+        <div class="view-count">
+          {{ fmt_views(video.views) }} views &nbsp;·&nbsp; {{ time_ago(video.created) }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Description -->
+    {% if video.description %}
+    <div class="description-box">
+      <pre class="description-text">{{ video.description }}</pre>
+    </div>
+    {% endif %}
+
+    <!-- Comments -->
+    <div class="comments-section">
+      <h3>{{ comments|length }} Comment{{ 's' if comments|length != 1 else '' }}</h3>
+
+      {% if session.user_id %}
+      <div class="comment-form">
+        {% set cu = current_user() %}
+        {% if cu and cu.avatar %}
+          <img src="{{ url_for('uploaded_file', filename=cu.avatar) }}" class="avatar-sm">
+        {% else %}
+          <div class="avatar-sm avatar-placeholder">
+            {{ (cu.channel_name or cu.username)[0].upper() if cu else 'U' }}
+          </div>
+        {% endif %}
+        <div class="comment-input-wrap">
+          <input type="text" id="comment-input" placeholder="Add a comment…" class="comment-input"
+                 onkeydown="if(event.key==='Enter')postComment('{{ video.uuid }}')">
+          <button onclick="postComment('{{ video.uuid }}')" class="comment-submit">Comment</button>
+        </div>
+      </div>
+      {% else %}
+      <p class="login-to-comment">
+        <a href="{{ url_for('login') }}">Sign in</a> to leave a comment.
+      </p>
+      {% endif %}
+
+      <div id="comments-list">
+        {% for c in comments %}
+        <div class="comment">
+          {% if c.avatar %}
+            <img src="{{ url_for('uploaded_file', filename=c.avatar) }}" class="avatar-sm">
+          {% else %}
+            <div class="avatar-sm avatar-placeholder">{{ c.username[0].upper() }}</div>
+          {% endif %}
+          <div class="comment-body">
+            <span class="comment-author">{{ c.username }}</span>
+            <span class="comment-time">{{ time_ago(c.created) }}</span>
+            <p class="comment-text">{{ c.body }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div><!-- /watch-main -->
+
+  <!-- Related videos -->
+  <aside class="watch-sidebar">
+    <h3 class="related-title">Up next</h3>
+    {% for r in related %}
+    <a href="{{ url_for('watch', vid_uuid=r.uuid) }}" class="related-card">
+      <div class="related-thumb">
+        {% if r.thumbnail %}
+          <img src="{{ url_for('uploaded_file', filename=r.thumbnail) }}" alt="{{ r.title }}">
+        {% else %}
+          <div class="thumb-placeholder-sm">
+            <svg viewBox="0 0 24 24" fill="#aaa" width="24" height="24"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        {% endif %}
+      </div>
+      <div class="related-info">
+        <div class="related-title-text">{{ r.title }}</div>
+        <div class="related-meta">{{ r.channel_name or r.username }}</div>
+        <div class="related-meta">{{ fmt_views(r.views) }} views</div>
+      </div>
+    </a>
+    {% endfor %}
+  </aside>
+</div><!-- /watch-layout -->
+
+<script>
+async function toggleLike(uuid) {
+  {% if not session.user_id %}window.location='/login';return;{% endif %}
+  const res = await fetch(`/api/like/${uuid}`, {method:'POST'});
+  const d   = await res.json();
+  document.getElementById('like-count').textContent = d.count;
+  document.getElementById('like-btn').classList.toggle('active', d.liked);
+}
+
+async function toggleSave(uuid) {
+  {% if not session.user_id %}window.location='/login';return;{% endif %}
+  const res = await fetch(`/api/save/${uuid}`, {method:'POST'});
+  const d   = await res.json();
+  document.getElementById('save-btn').classList.toggle('active', d.saved);
+  document.getElementById('save-label').textContent = d.saved ? 'Saved' : 'Save';
+}
+
+async function toggleSub(channelId) {
+  const res = await fetch(`/api/subscribe/${channelId}`, {method:'POST'});
+  const d   = await res.json();
+  const btn = document.getElementById('sub-btn');
+  btn.classList.toggle('subbed', d.subbed);
+  btn.textContent = d.subbed ? 'Subscribed' : 'Subscribe';
+  const plural = d.count !== 1 ? 's' : '';
+  document.getElementById('sub-count-txt').textContent = `${d.count} subscriber${plural}`;
+}
+
+async function postComment(uuid) {
+  const input = document.getElementById('comment-input');
+  const body  = input.value.trim();
+  if (!body) return;
+  const res = await fetch(`/api/comment/${uuid}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({body})
+  });
+  if (!res.ok) return;
+  const d   = await res.json();
+  const init = d.username[0].toUpperCase();
+  const avatarHtml = d.avatar
+    ? `<img src="/uploads/${d.avatar}" class="avatar-sm">`
+    : `<div class="avatar-sm avatar-placeholder">${init}</div>`;
+  const html = `
+    <div class="comment">
+      ${avatarHtml}
+      <div class="comment-body">
+        <span class="comment-author">${d.username}</span>
+        <span class="comment-time">just now</span>
+        <p class="comment-text">${d.body}</p>
+      </div>
+    </div>`;
+  document.getElementById('comments-list').insertAdjacentHTML('afterbegin', html);
+  input.value = '';
+}
+</script>
+{% endblock %}

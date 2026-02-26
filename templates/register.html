@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Create Account - FlaskTube{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <svg viewBox="0 0 90 20" width="90" height="20" fill="none">
+        <rect width="28" height="20" rx="4" fill="#FF0000"/>
+        <polygon points="11,6 20,10 11,14" fill="white"/>
+        <text x="32" y="15" font-family="Roboto" font-weight="700" font-size="13" fill="currentColor">FlaskTube</text>
+      </svg>
+    </div>
+    <h2>Create your account</h2>
+    <p class="auth-sub">Join FlaskTube today</p>
+    <form method="post" class="auth-form">
+      <div class="form-group">
+        <input type="text" name="username" required class="form-input" placeholder="Username" autofocus>
+      </div>
+      <div class="form-group">
+        <input type="email" name="email" required class="form-input" placeholder="Email address">
+      </div>
+      <div class="form-group">
+        <input type="password" name="password" required class="form-input" placeholder="Password (min 6 chars)" minlength="6">
+      </div>
+      <button type="submit" class="submit-btn">Create Account</button>
+    </form>
+    <p class="auth-switch">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
+  </div>
+</div>
+{% endblock %}

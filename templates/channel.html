@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}{{ owner.channel_name or owner.username }} - FlaskTube{% endblock %}
+{% block content %}
+
+<div class="channel-header">
+  <!-- Banner -->
+  <div class="channel-banner" {% if owner.banner %}style="background-image:url('/uploads/{{ owner.banner }}');background-size:cover;background-position:center"{% endif %}></div>
+
+  <div class="channel-header-info">
+    <!-- Avatar -->
+    {% if owner.avatar %}
+      <img src="{{ url_for('uploaded_file', filename=owner.avatar) }}" class="avatar-lg">
+    {% else %}
+      <div class="avatar-lg avatar-placeholder" style="font-size:2rem">
+        {{ (owner.channel_name or owner.username)[0].upper() }}
+      </div>
+    {% endif %}
+
+    <!-- Info -->
+    <div class="channel-details">
+      <h1 class="channel-title">{{ owner.channel_name or owner.username }}</h1>
+      {% if owner.channel_name %}
+        <p class="channel-handle">@{{ owner.username }}</p>
+      {% endif %}
+      <p class="channel-stats" id="sub-count-txt">
+        {{ sub_count }} subscriber{{ 's' if sub_count != 1 else '' }} &nbsp;·&nbsp; {{ videos|length }} video{{ 's' if videos|length != 1 else '' }}
+      </p>
+      {% if owner.bio %}
+        <p class="channel-bio">{{ owner.bio }}</p>
+      {% endif %}
+      {% if owner.channel_links %}
+        <div class="channel-links">
+          {% for link in owner.channel_links.split('\n') %}
+            {% set link = link.strip() %}
+            {% if link %}
+              <a href="{{ link if link.startswith('http') else 'https://' + link }}"
+                 target="_blank" rel="noopener" class="channel-link-badge">
+                🔗 {{ link | replace('https://','') | replace('http://','') | truncate(30, True, '…') }}
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Buttons -->
+    <div class="channel-actions">
+      {% if is_owner %}
+        <a href="{{ url_for('edit_channel', channel_id=owner.id) }}" class="edit-channel-btn">
+          ✏️ Customize channel
+        </a>
+        <a href="{{ url_for('upload') }}" class="upload-btn">+ Upload</a>
+      {% elif session.user_id %}
+        <button class="sub-btn {% if subbed %}subbed{% endif %}" id="sub-btn"
+                onclick="toggleSub({{ owner.id }})">
+          {{ 'Subscribed' if subbed else 'Subscribe' }}
+        </button>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="sub-btn">Subscribe</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="channel-tabs">
+  <span class="tab active">Videos</span>
+</div>
+
+{% if videos %}
+<div class="video-grid">
+  {% for v in videos %}
+  <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+    <div class="video-thumb">
+      {% if v.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+      {% else %}
+        <div class="thumb-placeholder">
+          <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      {% endif %}
+    </div>
+    <div class="video-info">
+      <div class="video-title">{{ v.title }}</div>
+      <div class="video-meta">{{ fmt_views(v.views) }} views · {{ time_ago(v.created) }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <svg width="80" height="80" viewBox="0 0 24 24" fill="#aaa"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+  <p>No videos yet.</p>
+  {% if is_owner %}
+    <a href="{{ url_for('upload') }}" class="signin-btn">Upload your first video</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<script>
+async function toggleSub(channelId) {
+  const res = await fetch(`/api/subscribe/${channelId}`, {method:'POST'});
+  const d   = await res.json();
+  const btn = document.getElementById('sub-btn');
+  btn.classList.toggle('subbed', d.subbed);
+  btn.textContent = d.subbed ? 'Subscribed' : 'Subscribe';
+  const plural = d.count !== 1 ? 's' : '';
+  document.getElementById('sub-count-txt').textContent =
+    `${d.count} subscriber${plural} · {{ videos|length }} video{{ 's' if videos|length != 1 else '' }}`;
+}
+</script>
+{% endblock %}

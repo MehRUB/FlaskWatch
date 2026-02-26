@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Upload Video - FlaskTube{% endblock %}
+{% block content %}
+<div class="form-page">
+  <h2>Upload Video</h2>
+  <form method="post" enctype="multipart/form-data" class="upload-form">
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" name="title" required class="form-input" placeholder="Enter video title">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea name="description" class="form-input" rows="4" placeholder="Describe your video..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Video File * <span class="hint">(MP4, WebM, OGG, MOV, AVI, MKV)</span></label>
+      <div class="file-drop" id="video-drop">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="#aaa"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+        <p>Drag & drop or click to select video</p>
+        <input type="file" name="video" accept="video/*" required id="video-input"
+               onchange="showName(this,'video-name')" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+      </div>
+      <div id="video-name" class="file-name"></div>
+    </div>
+    <div class="form-group">
+      <label>Thumbnail <span class="hint">(optional, JPG/PNG)</span></label>
+      <div class="file-drop" id="thumb-drop">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="#aaa"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        <p>Click to select thumbnail</p>
+        <input type="file" name="thumbnail" accept="image/*" id="thumb-input"
+               onchange="showName(this,'thumb-name')" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+      </div>
+      <div id="thumb-name" class="file-name"></div>
+    </div>
+    <button type="submit" class="submit-btn" id="upload-btn">Upload Video</button>
+  </form>
+</div>
+
+<script>
+function showName(input, targetId) {
+  if (input.files[0]) {
+    document.getElementById(targetId).textContent = '✓ ' + input.files[0].name;
+  }
+}
+document.querySelector('.upload-form').addEventListener('submit', function() {
+  document.getElementById('upload-btn').textContent = 'Uploading...';
+  document.getElementById('upload-btn').disabled = true;
+});
+</script>
+{% endblock %}

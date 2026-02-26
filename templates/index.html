@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}{% if search_query is defined and search_query %}{{ search_query }} - FlaskTube{% else %}FlaskTube - Home{% endif %}{% endblock %}
+{% block content %}
+
+{% if search_query is defined and search_query %}
+  <h2 class="page-title">Search results for "{{ search_query }}"</h2>
+{% endif %}
+
+<div class="video-grid" id="video-grid"></div>
+<div id="loading" class="loading-spinner" style="display:none">
+  <div class="spinner"></div>
+</div>
+<div id="end-msg" class="end-msg" style="display:none">No more videos</div>
+
+<script>
+  const SEARCH_QUERY = {{ (search_query if search_query is defined and search_query else '') | tojson }};
+  let page = 1, loading = false, done = false;
+
+  function videoCard(v) {
+    const thumb = v.thumbnail
+      ? `<img src="/uploads/${v.thumbnail}" alt="${v.title}">`
+      : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg></div>`;
+    return `
+      <a href="/watch/${v.uuid}" class="video-card">
+        <div class="video-thumb">${thumb}</div>
+        <div class="video-info">
+          <div class="video-title">${v.title}</div>
+          <div class="video-meta">${v.username}</div>
+          <div class="video-meta">${v.views} views · ${v.created}</div>
+        </div>
+      </a>`;
+  }
+
+  async function loadMore() {
+    if (loading || done) return;
+    loading = true;
+    document.getElementById('loading').style.display = 'flex';
+    const url = `/api/videos?page=${page}${SEARCH_QUERY ? '&q='+encodeURIComponent(SEARCH_QUERY) : ''}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const grid = document.getElementById('video-grid');
+    data.videos.forEach(v => grid.insertAdjacentHTML('beforeend', videoCard(v)));
+    if (!data.has_more) {
+      done = true;
+      document.getElementById('end-msg').style.display = 'block';
+    }
+    page++;
+    loading = false;
+    document.getElementById('loading').style.display = 'none';
+  }
+
+  loadMore();
+
+  window.addEventListener('scroll', () => {
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 400) loadMore();
+  });
+</script>
+{% endblock %}

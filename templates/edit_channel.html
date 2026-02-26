@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}Customize Channel - FlaskTube{% endblock %}
+{% block content %}
+
+<div class="form-page">
+  <div class="edit-channel-header">
+    <h2>Customize Channel</h2>
+    <a href="{{ url_for('channel', channel_id=owner.id) }}" class="back-link">← Back to channel</a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="edit-channel-form">
+
+    <!-- Live preview banner -->
+    <div class="preview-section">
+      <h3 class="section-label">Channel Preview</h3>
+      <div class="channel-preview">
+        <div class="preview-banner" id="preview-banner"
+             {% if owner.banner %}style="background-image:url('/uploads/{{ owner.banner }}');background-size:cover;background-position:center"{% endif %}>
+          <label class="banner-upload-overlay" for="banner-input">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+            Change banner
+          </label>
+          <input type="file" name="banner" id="banner-input" accept="image/*"
+                 onchange="previewBanner(this)" style="display:none">
+        </div>
+        <div class="preview-channel-info">
+          <div class="preview-avatar-wrap">
+            {% if owner.avatar %}
+              <img src="{{ url_for('uploaded_file', filename=owner.avatar) }}"
+                   class="avatar-lg" id="preview-avatar">
+            {% else %}
+              <div class="avatar-lg avatar-placeholder" id="preview-avatar"
+                   style="font-size:2rem">
+                {{ (owner.channel_name or owner.username)[0].upper() }}
+              </div>
+            {% endif %}
+            <label class="avatar-upload-overlay" for="avatar-input" title="Change avatar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+            </label>
+            <input type="file" name="avatar" id="avatar-input" accept="image/*"
+                   onchange="previewAvatar(this)" style="display:none">
+          </div>
+          <div>
+            <div class="preview-name" id="preview-name">
+              {{ owner.channel_name or owner.username }}
+            </div>
+            <div class="preview-handle">@{{ owner.username }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Channel details -->
+    <div class="edit-section">
+      <h3 class="section-label">Channel details</h3>
+
+      <div class="form-group">
+        <label>Channel name</label>
+        <input type="text" name="channel_name" class="form-input"
+               placeholder="{{ owner.username }} (leave blank to use username)"
+               value="{{ owner.channel_name or '' }}"
+               oninput="document.getElementById('preview-name').textContent = this.value || '{{ owner.username }}'">
+        <p class="field-hint">This is the public name shown on your channel page.</p>
+      </div>
+
+      <div class="form-group">
+        <label>Bio / Description</label>
+        <textarea name="bio" class="form-input" rows="4"
+                  placeholder="Tell viewers about your channel...">{{ owner.bio or '' }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Links <span class="hint">(one per line)</span></label>
+        <textarea name="channel_links" class="form-input" rows="4"
+                  placeholder="https://twitter.com/yourhandle&#10;https://instagram.com/yourhandle">{{ owner.channel_links or '' }}</textarea>
+        <p class="field-hint">These appear on your channel page as clickable links.</p>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a href="{{ url_for('channel', channel_id=owner.id) }}" class="cancel-btn">Cancel</a>
+      <button type="submit" class="submit-btn" style="width:auto;padding:12px 32px">
+        Save changes
+      </button>
+    </div>
+
+  </form>
+</div>
+
+<script>
+function previewBanner(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const banner = document.getElementById('preview-banner');
+      banner.style.backgroundImage = `url(${e.target.result})`;
+      banner.style.backgroundSize = 'cover';
+      banner.style.backgroundPosition = 'center';
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+function previewAvatar(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const el = document.getElementById('preview-avatar');
+      if (el.tagName === 'IMG') {
+        el.src = e.target.result;
+      } else {
+        // Replace placeholder div with img
+        const img = document.createElement('img');
+        img.src = e.target.result;
+        img.className = 'avatar-lg';
+        img.id = 'preview-avatar';
+        el.parentNode.replaceChild(img, el);
+      }
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+</script>
+{% endblock %}

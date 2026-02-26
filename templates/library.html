@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Watch Later - FlaskTube{% endblock %}
+{% block content %}
+<h2 class="page-title">Watch Later</h2>
+
+{% if saved %}
+<div class="video-grid">
+  {% for v in saved %}
+  <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+    <div class="video-thumb">
+      {% if v.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+      {% else %}
+        <div class="thumb-placeholder">
+          <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      {% endif %}
+    </div>
+    <div class="video-info">
+      <div class="video-title">{{ v.title }}</div>
+      <div class="video-meta">{{ v.username }}</div>
+      <div class="video-meta">{{ fmt_views(v.views) }} views · Saved {{ time_ago(v.saved_at) }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <svg width="80" height="80" viewBox="0 0 24 24" fill="#aaa"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+  <p>No saved videos yet.</p>
+  <p>Click the bookmark icon on any video to save it for later.</p>
+  <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
+</div>
+{% endif %}
+{% endblock %}
