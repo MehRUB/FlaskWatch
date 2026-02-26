@@ -2,6 +2,7 @@ import os
 import uuid
 import sqlite3
 import secrets
+import base64
 from datetime import datetime
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -9,7 +10,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'youtube-clone-secret-key-change-in-production'
+app.secret_key = 'flasktube-secret-change-in-production'
 
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
@@ -20,16 +21,12 @@ ALLOWED_IMAGE = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 
-# ── Email config ──────────────────────────────────────────────────────────────
-# Set RESEND_API_KEY on Railway to enable real emails (resend.com — free tier)
-RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
-MAIL_FROM      = os.environ.get('MAIL_FROM', 'onboarding@resend.dev')
-SITE_URL       = os.environ.get('SITE_URL', 'http://localhost:5000')
-
-# ── Admin user IDs (set after first registration) ─────────────────────────────
-# User #1 (first account registered) is always admin.
-# Add more IDs here if needed: ADMIN_IDS = {1, 2}
-ADMIN_IDS = {1}
+# ── Config from environment variables ─────────────────────────────────────────
+RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', '')
+MAIL_FROM          = os.environ.get('MAIL_FROM', 'FlaskTube <onboarding@resend.dev>')
+SITE_URL           = os.environ.get('SITE_URL', 'http://localhost:5000')
+GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', '')
+ADMIN_IDS          = {1}
 
 
 # ─── Database ─────────────────────────────────────────────────────────────────
@@ -38,8 +35,8 @@ def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=WAL")
-        g.db.execute("PRAGMA foreign_keys=ON")
+        g.db.execute('PRAGMA journal_mode=WAL')
+        g.db.execute('PRAGMA foreign_keys=ON')
     return g.db
 
 @app.teardown_appcontext
@@ -51,30 +48,31 @@ def init_db():
     db = sqlite3.connect(DB_PATH)
     db.executescript('''
         CREATE TABLE IF NOT EXISTS users (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            username         TEXT    UNIQUE NOT NULL,
-            email            TEXT    UNIQUE NOT NULL,
-            password         TEXT    NOT NULL,
-            avatar           TEXT    DEFAULT NULL,
-            banner           TEXT    DEFAULT NULL,
-            bio              TEXT    DEFAULT '',
-            channel_name     TEXT    DEFAULT NULL,
-            channel_links    TEXT    DEFAULT '',
-            is_verified      INTEGER DEFAULT 0,
-            verify_token     TEXT    DEFAULT NULL,
-            created          TEXT    DEFAULT (datetime('now'))
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT    UNIQUE NOT NULL,
+            email         TEXT    UNIQUE NOT NULL,
+            password      TEXT    NOT NULL,
+            avatar        TEXT    DEFAULT NULL,
+            banner        TEXT    DEFAULT NULL,
+            bio           TEXT    DEFAULT '',
+            channel_name  TEXT    DEFAULT NULL,
+            channel_links TEXT    DEFAULT '',
+            is_verified   INTEGER DEFAULT 0,
+            verify_token  TEXT    DEFAULT NULL,
+            created       TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS videos (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            uuid        TEXT    UNIQUE NOT NULL,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            title       TEXT    NOT NULL,
-            description TEXT    DEFAULT '',
-            filename    TEXT    NOT NULL,
-            thumbnail   TEXT    DEFAULT NULL,
-            views       INTEGER DEFAULT 0,
-            is_removed  INTEGER DEFAULT 0,
-            created     TEXT    DEFAULT (datetime('now'))
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid         TEXT    UNIQUE NOT NULL,
+            user_id      INTEGER NOT NULL REFERENCES users(id),
+            title        TEXT    NOT NULL,
+            description  TEXT    DEFAULT '',
+            filename     TEXT    NOT NULL,
+            thumbnail    TEXT    DEFAULT NULL,
+            views        INTEGER DEFAULT 0,
+            is_removed   INTEGER DEFAULT 0,
+            remove_reason TEXT   DEFAULT NULL,
+            created      TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS likes (
             user_id  INTEGER NOT NULL REFERENCES users(id),
@@ -110,19 +108,20 @@ def init_db():
             created     TEXT    DEFAULT (datetime('now'))
         );
     ''')
-    # Safe migrations for existing DBs
-    for col, defn in [
-        ('banner',        'TEXT DEFAULT NULL'),
-        ('channel_name',  'TEXT DEFAULT NULL'),
-        ('channel_links', "TEXT DEFAULT ''"),
-        ('is_verified',   'INTEGER DEFAULT 0'),
-        ('verify_token',  'TEXT DEFAULT NULL'),
-        ('is_removed',    'INTEGER DEFAULT 0'),
-    ]:
-        for table in (['users'] if col in ('banner','channel_name','channel_links','is_verified','verify_token')
-                      else ['videos','comments']):
-            try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
-            except: pass
+    # Safe migrations for existing databases
+    migrations = [
+        ('users',   'banner',        'TEXT DEFAULT NULL'),
+        ('users',   'channel_name',  'TEXT DEFAULT NULL'),
+        ('users',   'channel_links', "TEXT DEFAULT ''"),
+        ('users',   'is_verified',   'INTEGER DEFAULT 0'),
+        ('users',   'verify_token',  'TEXT DEFAULT NULL'),
+        ('videos',  'is_removed',    'INTEGER DEFAULT 0'),
+        ('videos',  'remove_reason', 'TEXT DEFAULT NULL'),
+        ('comments','is_removed',    'INTEGER DEFAULT 0'),
+    ]
+    for table, col, defn in migrations:
+        try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
+        except: pass
     db.commit()
     db.close()
 
@@ -159,64 +158,141 @@ def allowed_image(fn): return '.' in fn and fn.rsplit('.',1)[1].lower() in ALLOW
 
 def save_file(file, subfolder=''):
     ext    = file.filename.rsplit('.', 1)[1].lower()
-    fname  = f"{uuid.uuid4().hex}.{ext}"
+    fname  = f'{uuid.uuid4().hex}.{ext}'
     folder = os.path.join(UPLOAD_FOLDER, subfolder)
     os.makedirs(folder, exist_ok=True)
     file.save(os.path.join(folder, fname))
-    return f"{subfolder}/{fname}" if subfolder else fname
+    return f'{subfolder}/{fname}' if subfolder else fname
 
 def time_ago(dt_str):
     try: dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
     except: return dt_str
     s = (datetime.utcnow() - dt).total_seconds()
     if s < 60:       return 'just now'
-    if s < 3600:     return f"{int(s//60)}m ago"
-    if s < 86400:    return f"{int(s//3600)}h ago"
-    if s < 2592000:  return f"{int(s//86400)}d ago"
-    if s < 31536000: return f"{int(s//2592000)}mo ago"
-    return f"{int(s//31536000)}y ago"
+    if s < 3600:     return f'{int(s//60)}m ago'
+    if s < 86400:    return f'{int(s//3600)}h ago'
+    if s < 2592000:  return f'{int(s//86400)}d ago'
+    if s < 31536000: return f'{int(s//2592000)}mo ago'
+    return f'{int(s//31536000)}y ago'
 
 def fmt_views(n):
-    if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
-    if n >= 1_000:     return f"{n/1_000:.1f}K"
+    if n >= 1_000_000: return f'{n/1_000_000:.1f}M'
+    if n >= 1_000:     return f'{n/1_000:.1f}K'
     return str(n)
-
-def send_verification_email(email, token):
-    verify_url = f"{SITE_URL}/verify/{token}"
-    if not RESEND_API_KEY:
-        print(f"\n[DEV] Verification link for {email}:\n{verify_url}\n")
-        return verify_url
-    try:
-        import resend
-        resend.api_key = RESEND_API_KEY
-        resend.Emails.send({
-            "from":    MAIL_FROM,
-            "to":      [email],
-            "subject": "Verify your FlaskTube account",
-            "html":    f"""
-                <div style="font-family:sans-serif;max-width:480px;margin:auto">
-                    <h2 style="color:#ff0000">FlaskTube</h2>
-                    <p>Thanks for signing up! Click below to verify your email:</p>
-                    <a href="{verify_url}"
-                       style="display:inline-block;background:#ff0000;color:#fff;
-                              padding:12px 24px;border-radius:8px;text-decoration:none;
-                              font-weight:bold;margin:16px 0">
-                        Verify my account
-                    </a>
-                    <p style="color:#aaa;font-size:12px">
-                        Or copy this link: {verify_url}
-                    </p>
-                </div>"""
-        })
-        return None
-    except Exception as e:
-        print(f"[EMAIL ERROR] {e}")
-        return verify_url
 
 app.jinja_env.globals.update(
     time_ago=time_ago, fmt_views=fmt_views,
     current_user=current_user, is_admin=is_admin
 )
+
+
+# ─── Email via Resend ─────────────────────────────────────────────────────────
+
+def send_verification_email(to_email, token):
+    """Send verification email. Returns True on success, False on failure."""
+    verify_url = f'{SITE_URL}/verify/{token}'
+
+    if not RESEND_API_KEY:
+        # Dev mode — print link to console so you can test locally
+        print(f'\n[DEV MODE] Verification link for {to_email}:\n{verify_url}\n')
+        return False  # signals dev mode to caller
+
+    try:
+        import resend
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            'from':    MAIL_FROM,
+            'to':      [to_email],
+            'subject': 'Verify your FlaskTube account',
+            'html': f'''
+                <div style="font-family:sans-serif;max-width:500px;margin:40px auto;
+                            background:#181818;color:#f1f1f1;border-radius:12px;
+                            padding:32px;border:1px solid #3d3d3d">
+                    <h2 style="color:#ff0000;margin-top:0">🎬 FlaskTube</h2>
+                    <p style="font-size:16px">Thanks for signing up! One click to activate your account:</p>
+                    <a href="{verify_url}"
+                       style="display:inline-block;background:#ff0000;color:#fff;
+                              padding:14px 28px;border-radius:8px;text-decoration:none;
+                              font-weight:bold;font-size:16px;margin:16px 0">
+                        ✓ Verify my account
+                    </a>
+                    <p style="color:#aaa;font-size:12px;margin-top:24px">
+                        Link not working? Copy and paste:<br>
+                        <a href="{verify_url}" style="color:#3ea6ff">{verify_url}</a>
+                    </p>
+                </div>'''
+        })
+        return True
+    except Exception as e:
+        print(f'[EMAIL ERROR] {e}')
+        return False
+
+
+# ─── AI Content Moderation via Google Vision ──────────────────────────────────
+
+def scan_image_for_explicit_content(image_path):
+    """
+    Scan an image using Google Vision API Safe Search.
+    Returns True if content is LIKELY or VERY_LIKELY explicit/violent.
+    Returns False if clean or if API is not configured.
+    """
+    if not GOOGLE_VISION_KEY:
+        return False  # No API key = skip scanning
+
+    try:
+        import urllib.request, json
+
+        with open(image_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+
+        payload = json.dumps({
+            'requests': [{
+                'image': {'content': image_data},
+                'features': [{'type': 'SAFE_SEARCH_DETECTION'}]
+            }]
+        }).encode()
+
+        req = urllib.request.Request(
+            f'https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_VISION_KEY}',
+            data=payload,
+            headers={'Content-Type': 'application/json'}
+        )
+        res  = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(res.read())
+
+        safe    = data['responses'][0].get('safeSearchAnnotation', {})
+        bad     = {'LIKELY', 'VERY_LIKELY'}
+        flagged = (
+            safe.get('adult')    in bad or
+            safe.get('violence') in bad or
+            safe.get('racy')     in bad
+        )
+
+        if flagged:
+            print(f'[AI MODERATION] Flagged image: {image_path} — {safe}')
+
+        return flagged
+
+    except Exception as e:
+        print(f'[VISION API ERROR] {e}')
+        return False  # On error, don't block the upload
+
+
+def extract_video_thumbnail(video_path, output_path):
+    """Extract first frame from video using ffmpeg (if available)."""
+    try:
+        import subprocess
+        result = subprocess.run([
+            'ffmpeg', '-i', video_path,
+            '-ss', '00:00:01',
+            '-vframes', '1',
+            '-q:v', '2',
+            output_path,
+            '-y'
+        ], capture_output=True, timeout=30)
+        return result.returncode == 0 and os.path.exists(output_path)
+    except Exception:
+        return False
 
 
 # ─── File serving ─────────────────────────────────────────────────────────────
@@ -235,24 +311,31 @@ def register():
         email    = request.form['email'].strip()
         password = request.form['password']
         db = get_db()
+
         if db.execute('SELECT id FROM users WHERE username=? OR email=?',
                       (username, email)).fetchone():
             flash('Username or email already taken.', 'error')
             return redirect(url_for('register'))
+
         token = secrets.token_urlsafe(32)
-        db.execute('INSERT INTO users (username, email, password, verify_token) VALUES (?,?,?,?)',
-                   (username, email, generate_password_hash(password), token))
+        db.execute(
+            'INSERT INTO users (username, email, password, verify_token, is_verified) VALUES (?,?,?,?,0)',
+            (username, email, generate_password_hash(password), token)
+        )
         db.commit()
         user = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
         session['user_id'] = user['id']
-        # Send / show verification
-        dev_url = send_verification_email(email, token)
-        if dev_url:
-            flash(f'Dev mode — verify here: {dev_url}', 'info')
-        else:
+
+        sent = send_verification_email(email, token)
+        if sent:
             flash('Account created! Check your email to verify your account.', 'success')
+        else:
+            # Dev mode — account is still usable, just show a warning
+            flash('Account created! Verify your email to unlock uploads and comments.', 'info')
+
         return redirect(url_for('index'))
     return render_template('register.html')
+
 
 @app.route('/verify/<token>')
 def verify_email(token):
@@ -264,8 +347,9 @@ def verify_email(token):
     db.execute('UPDATE users SET is_verified=1, verify_token=NULL WHERE id=?', (user['id'],))
     db.commit()
     session['user_id'] = user['id']
-    flash('Email verified! Your account is now fully active.', 'success')
+    flash('✅ Email verified! You can now upload videos and comment.', 'success')
     return redirect(url_for('index'))
+
 
 @app.route('/resend-verification')
 @login_required
@@ -278,12 +362,13 @@ def resend_verification():
     token = secrets.token_urlsafe(32)
     db.execute('UPDATE users SET verify_token=? WHERE id=?', (token, user['id']))
     db.commit()
-    dev_url = send_verification_email(user['email'], token)
-    if dev_url:
-        flash(f'Dev mode — verify here: {dev_url}', 'info')
+    sent = send_verification_email(user['email'], token)
+    if sent:
+        flash('Verification email sent! Check your inbox.', 'success')
     else:
-        flash('Verification email resent!', 'success')
+        flash('Dev mode — check your terminal for the verification link.', 'info')
     return redirect(url_for('index'))
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -298,6 +383,7 @@ def login():
         session['user_id'] = user['id']
         return redirect(request.args.get('next') or url_for('index'))
     return render_template('login.html')
+
 
 @app.route('/logout')
 def logout():
@@ -335,12 +421,10 @@ def api_videos():
             ORDER BY v.created DESC LIMIT ? OFFSET ?
         ''', (limit, offset)).fetchall()
     videos = [{
-        'uuid':       r['uuid'], 'title': r['title'],
-        'thumbnail':  r['thumbnail'],
-        'views':      fmt_views(r['views']),
+        'uuid':       r['uuid'],      'title':     r['title'],
+        'thumbnail':  r['thumbnail'], 'views':     fmt_views(r['views']),
         'username':   r['channel_name'] or r['username'],
-        'user_id':    r['user_id'],
-        'created':    time_ago(r['created']),
+        'user_id':    r['user_id'],   'created':   time_ago(r['created']),
         'like_count': r['like_count'],
     } for r in rows]
     return jsonify({'videos': videos, 'has_more': len(rows) == limit})
@@ -357,25 +441,55 @@ def search():
 def upload():
     user = current_user()
     if not user['is_verified']:
-        flash('You must verify your email before uploading videos.', 'error')
-        return redirect(url_for('index'))
+        flash('Please verify your email before uploading. Check your inbox or resend below.', 'error')
+        return redirect(url_for('resend_verification'))
+
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
         desc  = request.form.get('description', '').strip()
         video = request.files.get('video')
         thumb = request.files.get('thumbnail')
+
         if not title or not video or not video.filename:
             flash('Title and a video file are required.', 'error')
             return redirect(url_for('upload'))
         if not allowed_video(video.filename):
             flash('Unsupported video format. Use MP4, WebM, MOV, AVI, or MKV.', 'error')
             return redirect(url_for('upload'))
+
         vid_filename   = save_file(video, 'videos')
-        thumb_filename = save_file(thumb, 'thumbnails') if thumb and thumb.filename and allowed_image(thumb.filename) else None
+        thumb_filename = None
+
+        # Handle thumbnail
+        if thumb and thumb.filename and allowed_image(thumb.filename):
+            thumb_filename = save_file(thumb, 'thumbnails')
+        else:
+            # Try auto-extract thumbnail from video using ffmpeg
+            vid_abs   = os.path.join(UPLOAD_FOLDER, vid_filename)
+            thumb_out = os.path.join(UPLOAD_FOLDER, 'thumbnails', f'{uuid.uuid4().hex}.jpg')
+            os.makedirs(os.path.dirname(thumb_out), exist_ok=True)
+            if extract_video_thumbnail(vid_abs, thumb_out):
+                thumb_filename = 'thumbnails/' + os.path.basename(thumb_out)
+
+        # ── AI Moderation ──────────────────────────────────────────────────────
+        # Scan thumbnail for explicit content (fast, cheap — just one image)
+        if thumb_filename and GOOGLE_VISION_KEY:
+            thumb_abs = os.path.join(UPLOAD_FOLDER, thumb_filename)
+            if scan_image_for_explicit_content(thumb_abs):
+                # Delete the uploaded files
+                try: os.remove(os.path.join(UPLOAD_FOLDER, vid_filename))
+                except: pass
+                try: os.remove(thumb_abs)
+                except: pass
+                flash('⚠️ Your video was rejected because it appears to contain inappropriate content.', 'error')
+                return redirect(url_for('upload'))
+
         vid_uuid = uuid.uuid4().hex
         db = get_db()
-        db.execute('INSERT INTO videos (uuid, user_id, title, description, filename, thumbnail) VALUES (?,?,?,?,?,?)',
-                   (vid_uuid, session['user_id'], title, desc, vid_filename, thumb_filename))
+        db.execute(
+            'INSERT INTO videos (uuid, user_id, title, description, filename, thumbnail) VALUES (?,?,?,?,?,?)',
+            (vid_uuid, session['user_id'], title, desc, vid_filename, thumb_filename)
+        )
         db.commit()
         flash('Video uploaded successfully!', 'success')
         return redirect(url_for('watch', vid_uuid=vid_uuid))
@@ -397,22 +511,27 @@ def watch(vid_uuid):
     if not video:
         flash('Video not found or has been removed.', 'error')
         return redirect(url_for('index'))
+
     db.execute('UPDATE videos SET views=views+1 WHERE uuid=?', (vid_uuid,))
     db.commit()
+
     comments = db.execute('''
         SELECT c.*, u.username, u.avatar FROM comments c
         JOIN users u ON c.user_id=u.id
         WHERE c.video_id=? AND c.is_removed=0 ORDER BY c.created DESC
     ''', (video['id'],)).fetchall()
+
     uid    = session.get('user_id')
-    liked  = bool(uid and db.execute('SELECT 1 FROM likes WHERE user_id=? AND video_id=?', (uid, video['id'])).fetchone())
+    liked  = bool(uid and db.execute('SELECT 1 FROM likes WHERE user_id=? AND video_id=?',           (uid, video['id'])).fetchone())
     subbed = bool(uid and db.execute('SELECT 1 FROM subscriptions WHERE subscriber_id=? AND channel_id=?', (uid, video['channel_id'])).fetchone())
-    saved  = bool(uid and db.execute('SELECT 1 FROM saved_videos WHERE user_id=? AND video_id=?', (uid, video['id'])).fetchone())
+    saved  = bool(uid and db.execute('SELECT 1 FROM saved_videos WHERE user_id=? AND video_id=?',    (uid, video['id'])).fetchone())
+
     related = db.execute('''
         SELECT v.uuid, v.title, v.thumbnail, v.views, u.username, u.channel_name
         FROM videos v JOIN users u ON v.user_id=u.id
         WHERE v.uuid != ? AND v.is_removed=0 ORDER BY RANDOM() LIMIT 10
     ''', (vid_uuid,)).fetchall()
+
     return render_template('watch.html', video=video, comments=comments,
                            liked=liked, subbed=subbed, saved=saved, related=related)
 
@@ -457,7 +576,7 @@ def toggle_save(vid_uuid):
 def add_comment(vid_uuid):
     user = current_user()
     if not user['is_verified']:
-        return jsonify({'error': 'Verify your email to comment.'}), 403
+        return jsonify({'error': 'Please verify your email to comment.'}), 403
     db    = get_db()
     video = db.execute('SELECT id FROM videos WHERE uuid=? AND is_removed=0', (vid_uuid,)).fetchone()
     if not video: return jsonify({'error': 'Not found'}), 404
@@ -495,10 +614,8 @@ def report():
     video_id   = data.get('video_id')
     comment_id = data.get('comment_id')
     reason     = data.get('reason', '').strip()
-    if not reason:
-        return jsonify({'error': 'Reason required'}), 400
+    if not reason: return jsonify({'error': 'Reason required'}), 400
     db = get_db()
-    # Resolve uuid -> id for videos
     if video_id:
         row = db.execute('SELECT id FROM videos WHERE uuid=?', (video_id,)).fetchone()
         if not row: return jsonify({'error': 'Not found'}), 404
@@ -509,7 +626,7 @@ def report():
     return jsonify({'ok': True})
 
 
-# ─── Admin Panel ──────────────────────────────────────────────────────────────
+# ─── Admin ────────────────────────────────────────────────────────────────────
 
 @app.route('/admin')
 @admin_required
@@ -518,11 +635,9 @@ def admin():
     reports = db.execute('''
         SELECT r.*,
                u.username  AS reporter_name,
-               v.title     AS video_title,
-               v.uuid      AS video_uuid,
+               v.title     AS video_title,  v.uuid      AS video_uuid,
                v.is_removed AS video_removed,
-               c.body      AS comment_body,
-               c.is_removed AS comment_removed,
+               c.body      AS comment_body, c.is_removed AS comment_removed,
                cu.username AS commenter_name
         FROM reports r
         LEFT JOIN users    u  ON r.reporter_id = u.id
@@ -532,10 +647,12 @@ def admin():
         ORDER BY r.created DESC
     ''').fetchall()
     stats = {
-        'total_users':   db.execute('SELECT COUNT(*) FROM users').fetchone()[0],
-        'total_videos':  db.execute('SELECT COUNT(*) FROM videos WHERE is_removed=0').fetchone()[0],
+        'total_users':     db.execute('SELECT COUNT(*) FROM users').fetchone()[0],
+        'total_videos':    db.execute('SELECT COUNT(*) FROM videos WHERE is_removed=0').fetchone()[0],
         'pending_reports': db.execute("SELECT COUNT(*) FROM reports WHERE status='pending'").fetchone()[0],
         'removed_videos':  db.execute('SELECT COUNT(*) FROM videos WHERE is_removed=1').fetchone()[0],
+        'ai_enabled':      bool(GOOGLE_VISION_KEY),
+        'email_enabled':   bool(RESEND_API_KEY),
     }
     return render_template('admin.html', reports=reports, stats=stats)
 
@@ -552,9 +669,8 @@ def admin_remove_video(vid_uuid):
 @app.route('/admin/restore-video/<vid_uuid>', methods=['POST'])
 @admin_required
 def admin_restore_video(vid_uuid):
-    db = get_db()
-    db.execute('UPDATE videos SET is_removed=0 WHERE uuid=?', (vid_uuid,))
-    db.commit()
+    get_db().execute('UPDATE videos SET is_removed=0 WHERE uuid=?', (vid_uuid,))
+    get_db().commit()
     flash('Video restored.', 'success')
     return redirect(url_for('admin'))
 
@@ -571,8 +687,9 @@ def admin_remove_comment(comment_id):
 @app.route('/admin/dismiss-report/<int:report_id>', methods=['POST'])
 @admin_required
 def admin_dismiss_report(report_id):
-    get_db().execute("UPDATE reports SET status='dismissed' WHERE id=?", (report_id,))
-    get_db().commit()
+    db = get_db()
+    db.execute("UPDATE reports SET status='dismissed' WHERE id=?", (report_id,))
+    db.commit()
     flash('Report dismissed.', 'success')
     return redirect(url_for('admin'))
 
@@ -583,9 +700,7 @@ def admin_ban_user(user_id):
         flash('Cannot ban an admin.', 'error')
         return redirect(url_for('admin'))
     db = get_db()
-    # Remove all their videos
     db.execute('UPDATE videos SET is_removed=1 WHERE user_id=?', (user_id,))
-    # Delete their account
     db.execute('DELETE FROM users WHERE id=?', (user_id,))
     db.commit()
     flash('User banned and all their content removed.', 'success')
@@ -608,9 +723,8 @@ def channel(channel_id):
     sub_count = db.execute('SELECT COUNT(*) FROM subscriptions WHERE channel_id=?', (channel_id,)).fetchone()[0]
     uid      = session.get('user_id')
     subbed   = bool(uid and db.execute('SELECT 1 FROM subscriptions WHERE subscriber_id=? AND channel_id=?', (uid, channel_id)).fetchone())
-    is_owner = (uid == channel_id)
     return render_template('channel.html', owner=owner, videos=videos,
-                           sub_count=sub_count, subbed=subbed, is_owner=is_owner)
+                           sub_count=sub_count, subbed=subbed, is_owner=(uid == channel_id))
 
 @app.route('/channel/<int:channel_id>/edit', methods=['GET', 'POST'])
 @login_required
