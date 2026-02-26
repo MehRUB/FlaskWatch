@@ -1,10 +1,8 @@
 import os
 import uuid
 import sqlite3
-import smtplib
 import secrets
 from datetime import datetime
-from email.mime.text import MIMEText
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, send_from_directory, g)
@@ -22,14 +20,11 @@ ALLOWED_IMAGE = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 
-# ── Email config (optional — set these to enable verification emails) ─────────
-# If left empty, verification links are shown on-screen instead (dev mode)
-MAIL_SERVER   = os.environ.get('MAIL_SERVER', '')
-MAIL_PORT     = int(os.environ.get('MAIL_PORT', 587))
-MAIL_USERNAME = os.environ.get('MAIL_USERNAME', '')
-MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD', '')
-MAIL_FROM     = os.environ.get('MAIL_FROM', 'noreply@flasktube.com')
-SITE_URL      = os.environ.get('SITE_URL', 'http://localhost:5000')
+# ── Email config ──────────────────────────────────────────────────────────────
+# Set RESEND_API_KEY on Railway to enable real emails (resend.com — free tier)
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+MAIL_FROM      = os.environ.get('MAIL_FROM', 'onboarding@resend.dev')
+SITE_URL       = os.environ.get('SITE_URL', 'http://localhost:5000')
 
 # ── Admin user IDs (set after first registration) ─────────────────────────────
 # User #1 (first account registered) is always admin.
@@ -188,19 +183,31 @@ def fmt_views(n):
 
 def send_verification_email(email, token):
     verify_url = f"{SITE_URL}/verify/{token}"
-    if not MAIL_SERVER:
-        # Dev mode: print to console and show in flash
+    if not RESEND_API_KEY:
         print(f"\n[DEV] Verification link for {email}:\n{verify_url}\n")
-        return verify_url   # returned so we can flash it
+        return verify_url
     try:
-        msg = MIMEText(f"Click to verify your FlaskTube account:\n\n{verify_url}")
-        msg['Subject'] = 'Verify your FlaskTube account'
-        msg['From']    = MAIL_FROM
-        msg['To']      = email
-        with smtplib.SMTP(MAIL_SERVER, MAIL_PORT) as s:
-            s.starttls()
-            s.login(MAIL_USERNAME, MAIL_PASSWORD)
-            s.send_message(msg)
+        import resend
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            "from":    MAIL_FROM,
+            "to":      [email],
+            "subject": "Verify your FlaskTube account",
+            "html":    f"""
+                <div style="font-family:sans-serif;max-width:480px;margin:auto">
+                    <h2 style="color:#ff0000">FlaskTube</h2>
+                    <p>Thanks for signing up! Click below to verify your email:</p>
+                    <a href="{verify_url}"
+                       style="display:inline-block;background:#ff0000;color:#fff;
+                              padding:12px 24px;border-radius:8px;text-decoration:none;
+                              font-weight:bold;margin:16px 0">
+                        Verify my account
+                    </a>
+                    <p style="color:#aaa;font-size:12px">
+                        Or copy this link: {verify_url}
+                    </p>
+                </div>"""
+        })
         return None
     except Exception as e:
         print(f"[EMAIL ERROR] {e}")
