@@ -22,10 +22,10 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 
 # ── Config from environment variables ─────────────────────────────────────────
-RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', 're_KEvsQZtd_rmWotYoRiX9Likp2EQ2KYdgs')
+RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', '')
 MAIL_FROM          = os.environ.get('MAIL_FROM', 'FlaskTube <onboarding@resend.dev>')
-SITE_URL           = os.environ.get('SITE_URL', 'https://flasktube.up.railway.app')
-GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', 'AIzaSyAKgsxs-jW2fhB02MTUHpmKYdBoSh8FFdA')
+SITE_URL           = os.environ.get('SITE_URL', 'http://localhost:5000')
+GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', '')
 ADMIN_EMAIL        = 'mehdiprodmus@gmail.com'  # only this email gets admin
 
 
@@ -368,7 +368,7 @@ def resend_verification():
     if sent:
         flash('Verification email sent! Check your inbox.', 'success')
     else:
-        flash('Dev mode — check your terminal for the verification link.', 'info')
+        flash('Verification email sent! Check your inbox (and spam folder).', 'success')
     return redirect(url_for('index'))
 
 
