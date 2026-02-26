@@ -1,11 +1,15 @@
 import os
 import uuid
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, use system env vars
 import sqlite3
 import secrets
 import base64
 from datetime import datetime
 from functools import wraps
-from flask_mail import Mail, Message
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, send_from_directory, g)
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -22,22 +26,11 @@ ALLOWED_IMAGE = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 
-app.config.update(
-    MAIL_SERVER=os.environ.get('MAIL_SERVER'),
-    MAIL_PORT=int(os.environ.get('MAIL_PORT', 587)),
-    MAIL_USE_TLS=True,
-    MAIL_USERNAME=os.environ.get('MAIL_USERNAME'),
-    MAIL_PASSWORD=os.environ.get('MAIL_PASSWORD'),
-    MAIL_DEFAULT_SENDER=os.environ.get('MAIL_DEFAULT_SENDER')
-)
-
-mail = Mail(app)
-
 # ── Config from environment variables ─────────────────────────────────────────
-RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', 're_KEvsQZtd_rmWotYoRiX9Likp2EQ2KYdgs')
+RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', '')
 MAIL_FROM          = os.environ.get('MAIL_FROM', 'FlaskTube <onboarding@resend.dev>')
-SITE_URL           = os.environ.get('SITE_URL', 'https://flasktube.up.railway.app')
-GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', 'AIzaSyAKgsxs-jW2fhB02MTUHpmKYdBoSh8FFdA')
+SITE_URL           = os.environ.get('SITE_URL', 'http://localhost:5000')
+GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', '')
 ADMIN_EMAIL        = 'mehdiprodmus@gmail.com'  # only this email gets admin
 
 
@@ -202,28 +195,43 @@ app.jinja_env.globals.update(
 
 # ─── Email via Resend ─────────────────────────────────────────────────────────
 
-def send_verification_email(user_email, token):
-    # Ensure this matches your Railway public domain
-    public_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'your-app.up.railway.app')
-    link = f"https://{public_url}/verify/{token}"
-    
-    msg = Message("Verify Your FlaskTube Account",
-                  recipients=[user_email])
-    
-    msg.body = f"Welcome to FlaskTube! Please verify your account by clicking: {link}"
-    msg.html = f"""
-        <h3>Welcome to FlaskTube!</h3>
-        <p>You're almost there. Click the button below to verify your email address:</p>
-        <a href="{link}" style="background:#ff0000; color:#fff; padding:10px 20px; text-decoration:none; border-radius:5px;">
-            Verify Email
-        </a>
-    """
-    
+def send_verification_email(to_email, token):
+    """Send verification email. Returns True on success, False on failure."""
+    verify_url = f'{SITE_URL}/verify/{token}'
+
+    if not RESEND_API_KEY:
+        # Dev mode — print link to console so you can test locally
+        print(f'\n[DEV MODE] Verification link for {to_email}:\n{verify_url}\n')
+        return False  # signals dev mode to caller
+
     try:
-        mail.send(msg)
+        import resend
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            'from':    MAIL_FROM,
+            'to':      [to_email],
+            'subject': 'Verify your FlaskTube account',
+            'html': f'''
+                <div style="font-family:sans-serif;max-width:500px;margin:40px auto;
+                            background:#181818;color:#f1f1f1;border-radius:12px;
+                            padding:32px;border:1px solid #3d3d3d">
+                    <h2 style="color:#ff0000;margin-top:0">🎬 FlaskTube</h2>
+                    <p style="font-size:16px">Thanks for signing up! One click to activate your account:</p>
+                    <a href="{verify_url}"
+                       style="display:inline-block;background:#ff0000;color:#fff;
+                              padding:14px 28px;border-radius:8px;text-decoration:none;
+                              font-weight:bold;font-size:16px;margin:16px 0">
+                        ✓ Verify my account
+                    </a>
+                    <p style="color:#aaa;font-size:12px;margin-top:24px">
+                        Link not working? Copy and paste:<br>
+                        <a href="{verify_url}" style="color:#3ea6ff">{verify_url}</a>
+                    </p>
+                </div>'''
+        })
         return True
     except Exception as e:
-        print(f"SMTP Error: {e}")
+        print(f'[EMAIL ERROR] {e}')
         return False
 
 
@@ -299,16 +307,6 @@ def extract_video_thumbnail(video_path, output_path):
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
-
-@app.route('/test-mail')
-def test_mail():
-    try:
-        msg = Message("Test Email", recipients=[app.config['MAIL_USERNAME']])
-        msg.body = "If you see this, Brevo is working!"
-        mail.send(msg)
-        return "Email sent successfully! Check your inbox."
-    except Exception as e:
-        return f"Mail Error: {str(e)}"
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
