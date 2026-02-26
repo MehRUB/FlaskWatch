@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block title %}Admin Panel - FlaskTube{% endblock %}
+{% block content %}
+<div class="admin-layout">
+
+  <div class="admin-header">
+    <h1>⚙ Admin Panel</h1>
+    <span class="badge badge-pending">{{ stats.pending_reports }} pending</span>
+  </div>
+
+  <!-- Stats -->
+  <div class="admin-stats">
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.total_users }}</div>
+      <div class="stat-label">Total Users</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.total_videos }}</div>
+      <div class="stat-label">Active Videos</div>
+    </div>
+    <div class="stat-card warn">
+      <div class="stat-number">{{ stats.pending_reports }}</div>
+      <div class="stat-label">Pending Reports</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="stat-number">{{ stats.removed_videos }}</div>
+      <div class="stat-label">Removed Videos</div>
+    </div>
+  </div>
+
+  <!-- Reports -->
+  <h2 class="admin-section-title">Reports</h2>
+
+  {% if reports %}
+    {% for r in reports %}
+    <div class="report-card {% if r.status != 'pending' %}resolved{% endif %}">
+      <div class="report-meta">
+        <span>#{{ r.id }}</span> &nbsp;·&nbsp;
+        Reported by <span>{{ r.reporter_name or 'Anonymous' }}</span> &nbsp;·&nbsp;
+        {{ time_ago(r.created) }} &nbsp;·&nbsp;
+        <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+      </div>
+
+      <div class="report-reason">
+        <strong>Reason:</strong> {{ r.reason }}
+      </div>
+
+      <!-- Video report -->
+      {% if r.video_uuid %}
+      <div class="report-content">
+        {% if r.video_removed %}
+          <span style="color:var(--red)">🗑 Video already removed</span> —
+          <em>{{ r.video_title }}</em>
+        {% else %}
+          📹 Video: <a href="{{ url_for('watch', vid_uuid=r.video_uuid) }}" target="_blank">{{ r.video_title }}</a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Comment report -->
+      {% if r.comment_body %}
+      <div class="report-content">
+        {% if r.comment_removed %}
+          <span style="color:var(--red)">🗑 Comment already removed</span>
+        {% else %}
+          💬 Comment by <strong>{{ r.commenter_name }}</strong>:
+          "{{ r.comment_body | truncate(120) }}"
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Actions -->
+      {% if r.status == 'pending' %}
+      <div class="report-actions">
+        {% if r.video_uuid and not r.video_removed %}
+        <form method="post" action="{{ url_for('admin_remove_video', vid_uuid=r.video_uuid) }}" style="display:inline">
+          <button class="btn btn-danger">🗑 Remove Video</button>
+        </form>
+        {% endif %}
+        {% if r.video_uuid and r.video_removed %}
+        <form method="post" action="{{ url_for('admin_restore_video', vid_uuid=r.video_uuid) }}" style="display:inline">
+          <button class="btn btn-success">↩ Restore Video</button>
+        </form>
+        {% endif %}
+        {% if r.comment_id and not r.comment_removed %}
+        <form method="post" action="{{ url_for('admin_remove_comment', comment_id=r.comment_id) }}" style="display:inline">
+          <button class="btn btn-danger">🗑 Remove Comment</button>
+        </form>
+        {% endif %}
+        {% if r.reporter_id and r.video_id %}
+        <form method="post" action="{{ url_for('admin_ban_user', user_id=r.reporter_id) }}"
+              style="display:inline"
+              onsubmit="return confirm('Ban this user and remove ALL their content?')">
+          <button class="btn btn-neutral" style="color:var(--red)">🚫 Ban Uploader</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('admin_dismiss_report', report_id=r.id) }}" style="display:inline">
+          <button class="btn btn-neutral">✓ Dismiss</button>
+        </form>
+      </div>
+      {% else %}
+      <div style="font-size:13px;color:var(--text2);margin-top:8px">
+        {% if r.status == 'resolved' %}✅ Resolved{% else %}✓ Dismissed{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="no-reports">
+      ✅ No reports yet — your community is clean!
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

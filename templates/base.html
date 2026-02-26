@@ -13,12 +13,13 @@
 <!-- TOP NAV -->
 <header class="topbar">
   <div class="topbar-left">
-    <button class="menu-btn" onclick="toggleSidebar()">&#9776;</button>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar">&#9776;</button>
     <a href="{{ url_for('index') }}" class="logo">
-      <svg viewBox="0 0 90 20" width="90" height="20" fill="none">
-        <rect width="28" height="20" rx="4" fill="#FF0000"/>
-        <polygon points="11,6 20,10 11,14" fill="white"/>
-        <text x="32" y="15" font-family="Roboto" font-weight="700" font-size="13" fill="currentColor">FlaskTube</text>
+      <!-- Wider viewBox so the text isn't cropped -->
+      <svg viewBox="0 0 110 24" width="110" height="24" xmlns="http://www.w3.org/2000/svg" overflow="visible">
+        <rect width="30" height="22" rx="4" fill="#FF0000" y="1"/>
+        <polygon points="12,7 22,12 12,17" fill="white"/>
+        <text x="35" y="17" font-family="Roboto,sans-serif" font-weight="700" font-size="14" fill="currentColor">FlaskTube</text>
       </svg>
     </a>
   </div>
@@ -26,7 +27,7 @@
   <form class="search-form" action="{{ url_for('search') }}" method="get">
     <input type="text" name="q" placeholder="Search" class="search-input"
            value="{{ search_query if search_query is defined else '' }}">
-    <button type="submit" class="search-btn">
+    <button type="submit" class="search-btn" aria-label="Search">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
         <path d="M15.5 14h-.79l-.28-.27A6.5 6.5 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
       </svg>
@@ -35,6 +36,9 @@
 
   <div class="topbar-right">
     {% if session.user_id %}
+      {% if is_admin() %}
+        <a href="{{ url_for('admin') }}" class="admin-badge">⚙ Admin</a>
+      {% endif %}
       <a href="{{ url_for('upload') }}" class="icon-btn" title="Upload">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
       </a>
@@ -44,7 +48,7 @@
       {% set cu = current_user() %}
       <a href="{{ url_for('channel', channel_id=session.user_id) }}" class="avatar-link">
         {% if cu and cu.avatar %}
-          <img src="{{ url_for('uploaded_file', filename=cu.avatar) }}" class="avatar-sm">
+          <img src="{{ url_for('uploaded_file', filename=cu.avatar) }}" class="avatar-sm" alt="avatar">
         {% else %}
           <div class="avatar-sm avatar-placeholder">{{ cu.username[0].upper() if cu else 'U' }}</div>
         {% endif %}
@@ -55,6 +59,9 @@
     {% endif %}
   </div>
 </header>
+
+<!-- Sidebar overlay (mobile tap-to-close) -->
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
 
 <!-- SIDEBAR + CONTENT -->
 <div class="layout">
@@ -74,8 +81,14 @@
     </a>
     <a href="{{ url_for('upload') }}" class="sidebar-item">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
-      <span>Upload Video</span>
+      <span>Upload</span>
     </a>
+    {% if is_admin() %}
+    <a href="{{ url_for('admin') }}" class="sidebar-item {% if request.endpoint=='admin' %}active{% endif %}">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+      <span>Admin Panel</span>
+    </a>
+    {% endif %}
     {% else %}
     <a href="{{ url_for('login') }}" class="sidebar-item">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
@@ -90,8 +103,41 @@
         <div class="alert alert-{{ category }}">{{ message }}</div>
       {% endfor %}
     {% endwith %}
+
+    {% if session.user_id %}
+      {% set cu = current_user() %}
+      {% if cu and not cu.is_verified %}
+      <div class="verify-banner">
+        ⚠️ Your email is not verified. Some features are restricted.
+        <a href="{{ url_for('resend_verification') }}">Resend verification email →</a>
+      </div>
+      {% endif %}
+    {% endif %}
+
     {% block content %}{% endblock %}
   </main>
+</div>
+
+<!-- Report Modal -->
+<div class="modal-backdrop" id="report-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeReportModal()">✕</button>
+    <h3>Report content</h3>
+    <div class="report-reasons">
+      <label><input type="radio" name="report-reason-opt" value="Sexual or pornographic content"> Sexual or pornographic content</label>
+      <label><input type="radio" name="report-reason-opt" value="Violence or graphic content"> Violence or graphic content</label>
+      <label><input type="radio" name="report-reason-opt" value="Hate speech or discrimination"> Hate speech or discrimination</label>
+      <label><input type="radio" name="report-reason-opt" value="Harassment or bullying"> Harassment or bullying</label>
+      <label><input type="radio" name="report-reason-opt" value="Spam or misleading"> Spam or misleading</label>
+      <label><input type="radio" name="report-reason-opt" value="Other"> Other</label>
+    </div>
+    <textarea id="report-reason" class="form-input report-custom" rows="3"
+              placeholder="Optional: add more details..."></textarea>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeReportModal()">Cancel</button>
+      <button class="modal-btn modal-btn-submit" onclick="submitReport()">Submit report</button>
+    </div>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>

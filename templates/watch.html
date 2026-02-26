@@ -60,6 +60,10 @@
         <div class="view-count">
           {{ fmt_views(video.views) }} views &nbsp;·&nbsp; {{ time_ago(video.created) }}
         </div>
+        <button class="report-btn" onclick="openReportModal('video', '{{ video.uuid }}')" title="Report this video">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>
+          Report
+        </button>
       </div>
     </div>
 
@@ -108,6 +112,11 @@
             <span class="comment-author">{{ c.username }}</span>
             <span class="comment-time">{{ time_ago(c.created) }}</span>
             <p class="comment-text">{{ c.body }}</p>
+            <div class="comment-actions">
+              <button class="report-btn" onclick="openReportModal('comment', '{{ c.id }}')" style="font-size:12px;padding:4px 8px">
+                🚩 Report
+              </button>
+            </div>
           </div>
         </div>
         {% endfor %}
