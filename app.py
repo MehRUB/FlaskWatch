@@ -300,6 +300,16 @@ def extract_video_thumbnail(video_path, output_path):
 def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+@app.route('/test-mail')
+def test_mail():
+    try:
+        msg = Message("Test Email", recipients=[app.config['MAIL_USERNAME']])
+        msg.body = "If you see this, Brevo is working!"
+        mail.send(msg)
+        return "Email sent successfully! Check your inbox."
+    except Exception as e:
+        return f"Mail Error: {str(e)}"
+
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
