@@ -206,30 +206,6 @@ app.jinja_env.globals.update(
     ADMIN_EMAILS=ADMIN_EMAILS
 )
 
-
-# ─── Email ────────────────────────────────────────────────────────────────────
-
-def send_email(to_email, subject, html):
-    if not GMAIL_USER or not GMAIL_PASS:
-        return
-    try:
-        import smtplib
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From']    = f'FlaskTube <{GMAIL_USER}>'
-        msg['To']      = to_email
-        msg.attach(MIMEText(html, 'html'))
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as smtp:
-            smtp.ehlo(); smtp.starttls()
-            smtp.login(GMAIL_USER, GMAIL_PASS)
-            smtp.sendmail(GMAIL_USER, to_email, msg.as_string())
-        print(f'[EMAIL SENT] to={to_email}')
-    except Exception as e:
-        print(f'[EMAIL ERROR] {e}')
-
-
 # ─── AI Moderation ────────────────────────────────────────────────────────────
 
 def scan_image_for_explicit_content(image_path):
