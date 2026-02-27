@@ -104,16 +104,6 @@
       {% endfor %}
     {% endwith %}
 
-    {% if session.user_id %}
-      {% set cu = current_user() %}
-      {% if cu and not cu.is_verified %}
-      <div class="verify-banner">
-        ⚠️ Your email is not verified. Some features are restricted.
-        <a href="{{ url_for('resend_verification') }}">Resend verification email →</a>
-      </div>
-      {% endif %}
-    {% endif %}
-
     {% block content %}{% endblock %}
   </main>
 </div>
