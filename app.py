@@ -203,27 +203,23 @@ def send_verification_email(to_email, token):
     gmail_pass = os.environ.get('GMAIL_PASS')
     site_url = os.environ.get('SITE_URL')
 
-    if not gmail_user or not gmail_pass:
-        print("[EMAIL ERROR] Missing environment variables")
-        return False
-
-    msg = MIMEText(f'Click here to verify: {site_url}/verify/{token}')
-    msg['Subject'] = 'Verify your FlaskTube account'
+    msg = MIMEText(f'Verify your account here: {site_url}/verify/{token}')
+    msg['Subject'] = 'FlaskTube Verification'
     msg['From'] = gmail_user
     msg['To'] = to_email
 
     try:
-        # We use SMTP_SSL and Port 465 instead of 587
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10) as server:
-            server.login(gmail_user, gmail_pass)
-            server.send_message(msg)
+        # We use standard SMTP on port 2525
+        server = smtplib.SMTP('smtp.gmail.com', 2525, timeout=10)
+        server.starttls()  # Secure the connection
+        server.login(gmail_user, gmail_pass)
+        server.send_message(msg)
+        server.quit()
         print(f'[EMAIL SENT] to {to_email}')
         return True
     except Exception as e:
-        # If this still says "Network is unreachable", the port is blocked
         print(f'[EMAIL ERROR] {e}')
         return False
-
 
 # ─── AI Content Moderation via Google Vision ──────────────────────────────────
 
