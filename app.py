@@ -274,14 +274,16 @@ def uploaded_file(filename):
 def register():
     if request.method == 'POST':
         username = request.form['username'].strip()
-        email    = request.form['email'].strip()
+        email = request.form['email'].strip()
         password = request.form['password']
         db = get_db()
         if db.execute('SELECT id FROM users WHERE username=? OR email=?', (username, email)).fetchone():
             flash('Username or email already taken.', 'error')
             return redirect(url_for('register'))
-        # Admin emails are auto-verified
+            
+        # You (mehdiprodmus@gmail.com) get the badge automatically
         auto_verified = 1 if email in ADMIN_EMAILS else 0
+        
         db.execute('INSERT INTO users (username, email, password, is_verified) VALUES (?,?,?,?)',
                    (username, email, generate_password_hash(password), auto_verified))
         db.commit()
@@ -313,10 +315,36 @@ def logout():
 
 # ─── Account Settings ─────────────────────────────────────────────────────────
 
-@app.route('/settings')
+@app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
-    return render_template('settings.html', user=current_user())
+    db = get_db()
+    user = current_user()
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'update_profile':
+            channel_name = request.form.get('channel_name', '').strip()
+            bio = request.form.get('bio', '').strip()
+            db.execute('UPDATE users SET channel_name=?, bio=? WHERE id=?', 
+                       (channel_name, bio, user['id']))
+            db.commit()
+            flash('Profile updated!', 'success')
+            
+        elif action == 'delete_account':
+            if user['email'] in ADMIN_EMAILS:
+                flash('Admin accounts cannot be deleted.', 'error')
+                return redirect(url_for('settings'))
+            
+            # Remove content but keep DB integrity
+            db.execute('UPDATE videos SET is_removed=1 WHERE user_id=?', (user['id'],))
+            db.execute('DELETE FROM users WHERE id=?', (user['id'],))
+            db.commit()
+            session.clear()
+            flash('Account deleted permanently.', 'info')
+            return redirect(url_for('index'))
+            
+    return render_template('settings.html', user=user)
 
 @app.route('/settings/change-password', methods=['POST'])
 @login_required
@@ -722,9 +750,10 @@ def admin_ban_user(user_id):
 @app.route('/admin/verify-user/<int:user_id>', methods=['POST'])
 @admin_required
 def admin_verify_user(user_id):
-    get_db().execute('UPDATE users SET is_verified=1 WHERE id=?', (user_id,))
-    get_db().commit()
-    flash('User verified.', 'success')
+    db = get_db()
+    db.execute('UPDATE users SET is_verified=1 WHERE id=?', (user_id,))
+    db.commit()
+    flash('User has been verified!', 'success')
     return redirect(url_for('admin'))
 
 
