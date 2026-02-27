@@ -54,67 +54,74 @@ def close_db(e=None):
 
 def init_db():
     db = sqlite3.connect(DB_PATH)
-    # app.py -> init_db()
+    # 1. Create Core Tables (Safe with IF NOT EXISTS)
     db.executescript('''
-        -- 1. Video Enhancements
-        ALTER TABLE videos ADD COLUMN visibility TEXT DEFAULT 'public'; -- public, private, unlisted, scheduled
-        ALTER TABLE videos ADD COLUMN scheduled_at TEXT DEFAULT NULL;
-        ALTER TABLE videos ADD COLUMN category TEXT DEFAULT 'General';
-    
-        -- 2. Watch History
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            avatar TEXT, banner TEXT, bio TEXT DEFAULT '',
+            channel_name TEXT, channel_links TEXT DEFAULT '',
+            is_verified INTEGER DEFAULT 0,
+            created TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            filename TEXT NOT NULL,
+            thumbnail TEXT DEFAULT NULL,
+            views INTEGER DEFAULT 0,
+            visibility TEXT DEFAULT 'public',
+            scheduled_at TEXT DEFAULT NULL,
+            category TEXT DEFAULT 'General',
+            is_removed INTEGER DEFAULT 0,
+            created TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS community_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            content TEXT NOT NULL,
+            image_path TEXT,
+            created TEXT DEFAULT (datetime('now'))
+        );
         CREATE TABLE IF NOT EXISTS watch_history (
             user_id INTEGER REFERENCES users(id),
             video_id INTEGER REFERENCES videos(id),
             watched_at TEXT DEFAULT (datetime('now')),
             PRIMARY KEY (user_id, video_id)
         );
-    
-        -- 3. Subscriptions & Notifications
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            subscriber_id INTEGER REFERENCES users(id),
-            channel_id INTEGER REFERENCES users(id),
-            notify INTEGER DEFAULT 1,
-            PRIMARY KEY (subscriber_id, channel_id)
-        );
-    
-        -- 4. Pinned Comments & Threading
-        ALTER TABLE comments ADD COLUMN is_pinned INTEGER DEFAULT 0;
-        ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) DEFAULT NULL;
-    
-        -- 5. Community Posts
-        CREATE TABLE IF NOT EXISTS community_posts (
+        CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER REFERENCES users(id),
-            content TEXT NOT NULL,
-            image_path TEXT,
-            created TEXT DEFAULT (datetime('now'))
+            name TEXT UNIQUE NOT NULL
         );
-    
-        -- 6. Analytics Cache (Subscriber Growth)
-        CREATE TABLE IF NOT EXISTS subscriber_stats (
-            channel_id INTEGER REFERENCES users(id),
-            date TEXT DEFAULT (date('now')),
-            count INTEGER DEFAULT 0,
-            PRIMARY KEY (channel_id, date)
+        CREATE TABLE IF NOT EXISTS video_tags (
+            video_id INTEGER REFERENCES videos(id),
+            tag_id INTEGER REFERENCES tags(id),
+            PRIMARY KEY (video_id, tag_id)
         );
     ''')
+
+    # 2. Add Missing Columns Safely (The "Migration Loop")
+    # This prevents the "duplicate column name" error
     migrations = [
-        ('users',         'banner',        'TEXT DEFAULT NULL'),
-        ('users',         'channel_name',  'TEXT DEFAULT NULL'),
-        ('users',         'channel_links', "TEXT DEFAULT ''"),
-        ('users',         'is_verified',   'INTEGER DEFAULT 0'),
-        ('videos',        'is_removed',    'INTEGER DEFAULT 0'),
-        ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
+        ('videos', 'visibility', "TEXT DEFAULT 'public'"),
+        ('videos', 'scheduled_at', "TEXT DEFAULT NULL"),
+        ('videos', 'category', "TEXT DEFAULT 'General'"),
+        ('comments', 'is_pinned', "INTEGER DEFAULT 0"),
+        ('comments', 'parent_id', "INTEGER REFERENCES comments(id) DEFAULT NULL"),
+        ('subscriptions', 'notify', "INTEGER DEFAULT 1"),
     ]
+
     for table, col, defn in migrations:
-        try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
-        except: pass
-    # Create comment_votes if missing
-    try:
-        db.execute('''CREATE TABLE IF NOT EXISTS comment_votes (
-            user_id INTEGER NOT NULL, comment_id INTEGER NOT NULL,
-            vote INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (user_id, comment_id))''')
-    except: pass
+        try:
+            db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
+        except sqlite3.OperationalError:
+            pass # Column already exists, skip it
+
     db.commit()
     db.close()
 
