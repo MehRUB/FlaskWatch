@@ -1,9 +1,7 @@
 import os
 import uuid
 import sqlite3
-import secrets
 import base64
-import threading
 from datetime import datetime
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -29,8 +27,6 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 
 GMAIL_USER        = os.environ.get('GMAIL_USER', '')
-GMAIL_PASS        = os.environ.get('GMAIL_PASS', '')
-SITE_URL          = os.environ.get('SITE_URL', 'http://localhost:5000')
 GOOGLE_VISION_KEY = os.environ.get('GOOGLE_VISION_KEY', '')
 
 # ── Admin / Moderator emails ───────────────────────────────────────────────────
