@@ -2,9 +2,9 @@ import os
 import uuid
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=False)  # Railway variables always win over .env
 except ImportError:
-    pass  # dotenv not installed, use system env vars
+    pass
 import sqlite3
 import secrets
 import base64
