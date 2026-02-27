@@ -4,204 +4,464 @@
 <div class="watch-layout">
   <div class="watch-main">
 
-    <!-- Player -->
-    <div class="player-wrap">
-      <video controls autoplay class="video-player" preload="metadata">
-        <source src="{{ url_for('uploaded_file', filename=video.filename) }}">
-        Your browser does not support video playback.
-      </video>
+    <!-- ── Video Player ─────────────────────────────────────────────────── -->
+    <div class="player-wrap" id="player-wrap">
+      <video id="vid" class="video-player" preload="metadata"
+             src="{{ url_for('uploaded_file', filename=video.filename) }}"></video>
+
+      <!-- Click overlay for play/pause -->
+      <div id="click-overlay" onclick="togglePlay()"></div>
+
+      <!-- Play/pause big icon feedback -->
+      <div id="play-feedback" class="play-feedback"></div>
+
+      <!-- Controls -->
+      <div class="player-controls" id="player-controls">
+        <!-- Progress bar -->
+        <div class="progress-wrap" id="progress-wrap">
+          <div class="progress-buffered" id="progress-buffered"></div>
+          <div class="progress-fill"     id="progress-fill"></div>
+          <div class="progress-thumb"    id="progress-thumb"></div>
+        </div>
+
+        <div class="controls-row">
+          <!-- Left controls -->
+          <div class="controls-left">
+            <button class="ctrl-btn" id="play-btn" onclick="togglePlay()" title="Play/Pause">
+              <svg id="play-icon" viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="pause-icon" viewBox="0 0 24 24" fill="currentColor" width="22" height="22" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+
+            <!-- Volume -->
+            <div class="volume-wrap" id="volume-wrap">
+              <button class="ctrl-btn" id="mute-btn" onclick="toggleMute()" title="Mute">
+                <svg id="vol-icon" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+                </svg>
+              </button>
+              <div class="volume-slider-wrap" id="vol-slider-wrap">
+                <div class="volume-slider" id="vol-slider">
+                  <div class="volume-fill" id="vol-fill"></div>
+                  <div class="volume-thumb" id="vol-thumb"></div>
+                </div>
+              </div>
+            </div>
+
+            <span class="time-display" id="time-display">0:00 / 0:00</span>
+          </div>
+
+          <!-- Right controls -->
+          <div class="controls-right">
+            <button class="ctrl-btn" onclick="skipTime(-10)" title="Rewind 10s">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="7" y="16" font-size="6" fill="currentColor">10</text></svg>
+            </button>
+            <button class="ctrl-btn" onclick="skipTime(10)" title="Forward 10s">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M18 13c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6v4l5-5-5-5v4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8h-2z"/><text x="7" y="16" font-size="6" fill="currentColor">10</text></svg>
+            </button>
+            <button class="ctrl-btn" id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
+    <!-- ── Video Info ────────────────────────────────────────────────────── -->
     <h1 class="watch-title">{{ video.title }}</h1>
 
-    <!-- Meta bar -->
     <div class="watch-meta-bar">
-      <div class="channel-info">
-        <a href="{{ url_for('channel', channel_id=video.channel_id) }}" class="channel-link">
-          {% if video.avatar %}
-            <img src="{{ url_for('uploaded_file', filename=video.avatar) }}" class="avatar-md">
-          {% else %}
-            <div class="avatar-md avatar-placeholder">
-              {{ (video.channel_name or video.username)[0].upper() }}
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div class="channel-info">
+          <a href="{{ url_for('channel', channel_id=video.channel_id) }}" class="channel-link">
+            {% if video.avatar %}
+              <img src="{{ url_for('uploaded_file', filename=video.avatar) }}" class="avatar-md" alt="">
+            {% else %}
+              <div class="avatar-md avatar-placeholder">{{ (video.channel_name or video.username)[0].upper() }}</div>
+            {% endif %}
+            <div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="channel-name">{{ video.channel_name or video.username }}</span>
+                {% if video.channel_verified %}
+                  <span class="verify-badge" title="Verified">✓</span>
+                {% endif %}
+                {% if video.channel_email in ADMIN_EMAILS %}
+                  <span class="admin-channel-badge">Admin</span>
+                {% endif %}
+              </div>
+              <span class="sub-count" id="sub-count">{{ fmt_views(video.sub_count) }} subscribers</span>
             </div>
-          {% endif %}
-          <div>
-            <div class="channel-name">{{ video.channel_name or video.username }}</div>
-            <div class="sub-count" id="sub-count-txt">{{ video.sub_count }} subscriber{{ 's' if video.sub_count != 1 else '' }}</div>
-          </div>
-        </a>
-        {% if session.user_id and session.user_id != video.channel_id %}
-          <button class="sub-btn {% if subbed %}subbed{% endif %}" id="sub-btn"
+          </a>
+          {% if session.user_id and session.user_id != video.channel_id %}
+          <button id="sub-btn" class="sub-btn {% if subbed %}subbed{% endif %}"
                   onclick="toggleSub({{ video.channel_id }})">
             {{ 'Subscribed' if subbed else 'Subscribe' }}
           </button>
-        {% elif not session.user_id %}
-          <a href="{{ url_for('login') }}" class="sub-btn">Subscribe</a>
-        {% endif %}
-      </div>
-
-      <div class="action-btns">
-        <button class="action-btn {% if liked %}active{% endif %}" id="like-btn"
-                onclick="toggleLike('{{ video.uuid }}')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/>
-          </svg>
-          <span id="like-count">{{ video.like_count }}</span>
-        </button>
-
-        <button class="action-btn {% if saved %}active{% endif %}" id="save-btn"
-                onclick="toggleSave('{{ video.uuid }}')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-          </svg>
-          <span id="save-label">{{ 'Saved' if saved else 'Save' }}</span>
-        </button>
-
-        <div class="view-count">
-          {{ fmt_views(video.views) }} views &nbsp;·&nbsp; {{ time_ago(video.created) }}
+          {% endif %}
         </div>
-        <button class="report-btn" onclick="openReportModal('video', '{{ video.uuid }}')" title="Report this video">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>
-          Report
-        </button>
+
+        <div class="action-btns">
+          {% if session.user_id %}
+          <button id="like-btn" class="action-btn {% if liked %}active{% endif %}"
+                  onclick="toggleLike('{{ video.uuid }}')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg>
+            <span id="like-count">{{ video.like_count }}</span>
+          </button>
+          <button id="save-btn" class="action-btn {% if saved %}active{% endif %}"
+                  onclick="toggleSave('{{ video.uuid }}')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+            {{ 'Saved' if saved else 'Save' }}
+          </button>
+          {% endif %}
+          <span class="view-count">{{ fmt_views(video.views) }} views · {{ time_ago(video.created) }}</span>
+          {% if session.user_id %}
+          <button class="report-btn" onclick="openReportModal('video','{{ video.uuid }}')">🚩 Report</button>
+          {% endif %}
+        </div>
       </div>
     </div>
 
-    <!-- Description -->
     {% if video.description %}
     <div class="description-box">
-      <pre class="description-text">{{ video.description }}</pre>
+      <p class="description-text">{{ video.description }}</p>
     </div>
     {% endif %}
 
-    <!-- Comments -->
+    <!-- ── Comments ──────────────────────────────────────────────────────── -->
     <div class="comments-section">
-      <h3>{{ comments|length }} Comment{{ 's' if comments|length != 1 else '' }}</h3>
+      <h3>{{ comments|length }} Comments</h3>
 
       {% if session.user_id %}
       <div class="comment-form">
         {% set cu = current_user() %}
         {% if cu and cu.avatar %}
-          <img src="{{ url_for('uploaded_file', filename=cu.avatar) }}" class="avatar-sm">
+          <img src="{{ url_for('uploaded_file', filename=cu.avatar) }}" class="avatar-sm" alt="">
         {% else %}
-          <div class="avatar-sm avatar-placeholder">
-            {{ (cu.channel_name or cu.username)[0].upper() if cu else 'U' }}
-          </div>
+          <div class="avatar-sm avatar-placeholder" style="font-size:14px">{{ cu.username[0].upper() if cu else 'U' }}</div>
         {% endif %}
         <div class="comment-input-wrap">
-          <input type="text" id="comment-input" placeholder="Add a comment…" class="comment-input"
-                 onkeydown="if(event.key==='Enter')postComment('{{ video.uuid }}')">
-          <button onclick="postComment('{{ video.uuid }}')" class="comment-submit">Comment</button>
+          <textarea id="comment-input" class="comment-input" rows="1"
+                    placeholder="Add a comment..." oninput="autoResize(this)"></textarea>
+          <button class="comment-submit" onclick="postComment('{{ video.uuid }}')">Comment</button>
         </div>
       </div>
       {% else %}
-      <p class="login-to-comment">
-        <a href="{{ url_for('login') }}">Sign in</a> to leave a comment.
-      </p>
+      <p class="login-to-comment"><a href="{{ url_for('login') }}">Sign in</a> to comment.</p>
       {% endif %}
 
       <div id="comments-list">
         {% for c in comments %}
-        <div class="comment">
-          {% if c.avatar %}
-            <img src="{{ url_for('uploaded_file', filename=c.avatar) }}" class="avatar-sm">
-          {% else %}
-            <div class="avatar-sm avatar-placeholder">{{ c.username[0].upper() }}</div>
-          {% endif %}
+        <div class="comment" id="comment-{{ c.id }}">
+          <a href="{{ url_for('channel', channel_id=c.commenter_id) }}">
+            {% if c.avatar %}
+              <img src="{{ url_for('uploaded_file', filename=c.avatar) }}" class="avatar-sm" alt="">
+            {% else %}
+              <div class="avatar-sm avatar-placeholder" style="font-size:14px">{{ c.username[0].upper() }}</div>
+            {% endif %}
+          </a>
           <div class="comment-body">
-            <span class="comment-author">{{ c.username }}</span>
-            <span class="comment-time">{{ time_ago(c.created) }}</span>
+            <div>
+              <a href="{{ url_for('channel', channel_id=c.commenter_id) }}" class="comment-author">
+                {{ c.username }}
+              </a>
+              {% if c.commenter_verified %}
+                <span class="verify-badge" title="Verified">✓</span>
+              {% endif %}
+              <span class="comment-time">{{ time_ago(c.created) }}</span>
+            </div>
             <p class="comment-text">{{ c.body }}</p>
             <div class="comment-actions">
-              <button class="report-btn" onclick="openReportModal('comment', '{{ c.id }}')" style="font-size:12px;padding:4px 8px">
-                🚩 Report
+              {% if session.user_id %}
+              <button class="comment-vote-btn {% if user_votes.get(c.id) == 1 %}voted-up{% endif %}"
+                      onclick="voteComment({{ c.id }}, 1, this)">
+                👍 <span class="vote-count">{{ c.likes }}</span>
               </button>
+              <button class="comment-vote-btn {% if user_votes.get(c.id) == -1 %}voted-down{% endif %}"
+                      onclick="voteComment({{ c.id }}, -1, this)">
+                👎 <span class="vote-count">{{ c.dislikes }}</span>
+              </button>
+              <button class="report-btn" style="font-size:12px;padding:2px 8px"
+                      onclick="openReportModal('comment', {{ c.id }})">🚩</button>
+              {% else %}
+              <span style="color:var(--text2);font-size:12px">👍 {{ c.likes }} &nbsp; 👎 {{ c.dislikes }}</span>
+              {% endif %}
             </div>
           </div>
         </div>
         {% endfor %}
       </div>
     </div>
+  </div>
 
-  </div><!-- /watch-main -->
-
-  <!-- Related videos -->
+  <!-- ── Related ─────────────────────────────────────────────────────────── -->
   <aside class="watch-sidebar">
-    <h3 class="related-title">Up next</h3>
+    <p class="related-title">Up next</p>
     {% for r in related %}
     <a href="{{ url_for('watch', vid_uuid=r.uuid) }}" class="related-card">
       <div class="related-thumb">
         {% if r.thumbnail %}
-          <img src="{{ url_for('uploaded_file', filename=r.thumbnail) }}" alt="{{ r.title }}">
+          <img src="{{ url_for('uploaded_file', filename=r.thumbnail) }}" alt="">
         {% else %}
           <div class="thumb-placeholder-sm">
-            <svg viewBox="0 0 24 24" fill="#aaa" width="24" height="24"><path d="M8 5v14l11-7z"/></svg>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--text2)"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
           </div>
         {% endif %}
       </div>
       <div class="related-info">
-        <div class="related-title-text">{{ r.title }}</div>
-        <div class="related-meta">{{ r.channel_name or r.username }}</div>
-        <div class="related-meta">{{ fmt_views(r.views) }} views</div>
+        <p class="related-title-text">{{ r.title }}</p>
+        <p class="related-meta">
+          {{ r.channel_name or r.username }}
+          {% if r.is_verified %}<span class="verify-badge">✓</span>{% endif %}
+        </p>
+        <p class="related-meta">{{ fmt_views(r.views) }} views</p>
       </div>
     </a>
     {% endfor %}
   </aside>
-</div><!-- /watch-layout -->
+</div>
 
 <script>
+// ── Video Player ──────────────────────────────────────────────────────────────
+const vid      = document.getElementById('vid');
+const wrap     = document.getElementById('player-wrap');
+const controls = document.getElementById('player-controls');
+const playBtn  = document.getElementById('play-btn');
+const playIcon = document.getElementById('play-icon');
+const pauseIcon= document.getElementById('pause-icon');
+const feedback = document.getElementById('play-feedback');
+const timeDsp  = document.getElementById('time-display');
+const progWrap = document.getElementById('progress-wrap');
+const progFill = document.getElementById('progress-fill');
+const progBuf  = document.getElementById('progress-buffered');
+const progThumb= document.getElementById('progress-thumb');
+const volFill  = document.getElementById('vol-fill');
+const volThumb = document.getElementById('vol-thumb');
+const volSlider= document.getElementById('vol-slider');
+const muteBtn  = document.getElementById('mute-btn');
+const volIcon  = document.getElementById('vol-icon');
+
+let hideTimer, isDraggingProgress = false, isDraggingVol = false;
+let lastVol = 1;
+
+// Show/hide controls on mouse move
+wrap.addEventListener('mousemove', () => {
+  controls.classList.add('visible');
+  clearTimeout(hideTimer);
+  if (!vid.paused) hideTimer = setTimeout(() => controls.classList.remove('visible'), 2500);
+});
+wrap.addEventListener('mouseleave', () => {
+  if (!vid.paused) controls.classList.remove('visible');
+});
+vid.addEventListener('pause',  () => { controls.classList.add('visible'); clearTimeout(hideTimer); });
+vid.addEventListener('play',   () => { hideTimer = setTimeout(() => controls.classList.remove('visible'), 2500); });
+
+// Click overlay — play/pause with feedback icon
+function togglePlay() {
+  if (vid.paused) { vid.play(); showFeedback('▶'); }
+  else            { vid.pause(); showFeedback('⏸'); }
+}
+function showFeedback(icon) {
+  feedback.textContent = icon;
+  feedback.classList.add('show');
+  clearTimeout(feedback._t);
+  feedback._t = setTimeout(() => feedback.classList.remove('show'), 600);
+}
+vid.addEventListener('play',  () => { playIcon.style.display='none'; pauseIcon.style.display=''; });
+vid.addEventListener('pause', () => { playIcon.style.display=''; pauseIcon.style.display='none'; });
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.key === ' ' || e.key === 'k') { e.preventDefault(); togglePlay(); }
+  if (e.key === 'ArrowRight') skipTime(10);
+  if (e.key === 'ArrowLeft')  skipTime(-10);
+  if (e.key === 'ArrowUp')    { e.preventDefault(); setVolume(Math.min(1, vid.volume + 0.1)); }
+  if (e.key === 'ArrowDown')  { e.preventDefault(); setVolume(Math.max(0, vid.volume - 0.1)); }
+  if (e.key === 'm') toggleMute();
+  if (e.key === 'f') toggleFullscreen();
+});
+
+function skipTime(s) { vid.currentTime = Math.max(0, Math.min(vid.duration||0, vid.currentTime + s)); }
+
+// Progress bar
+vid.addEventListener('timeupdate', updateProgress);
+vid.addEventListener('progress',   updateBuffered);
+vid.addEventListener('durationchange', updateProgress);
+
+function updateProgress() {
+  if (isDraggingProgress || !vid.duration) return;
+  const pct = vid.currentTime / vid.duration;
+  setProgressUI(pct);
+  timeDsp.textContent = fmtTime(vid.currentTime) + ' / ' + fmtTime(vid.duration);
+}
+function updateBuffered() {
+  if (!vid.duration || !vid.buffered.length) return;
+  progBuf.style.width = (vid.buffered.end(vid.buffered.length-1) / vid.duration * 100) + '%';
+}
+function setProgressUI(pct) {
+  progFill.style.width  = (pct*100) + '%';
+  progThumb.style.left  = (pct*100) + '%';
+}
+
+function scrubAt(e) {
+  const r = progWrap.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  vid.currentTime = pct * (vid.duration || 0);
+  setProgressUI(pct);
+}
+progWrap.addEventListener('mousedown', e => { isDraggingProgress=true; scrubAt(e); e.preventDefault(); });
+document.addEventListener('mousemove', e => { if (isDraggingProgress) scrubAt(e); });
+document.addEventListener('mouseup',   e => { if (isDraggingProgress) { isDraggingProgress=false; scrubAt(e); } });
+
+// Volume
+function setVolume(v) {
+  vid.volume = v;
+  vid.muted  = v === 0;
+  updateVolUI(v);
+}
+function updateVolUI(v) {
+  volFill.style.width  = (v*100) + '%';
+  volThumb.style.left  = (v*100) + '%';
+  // Icon: muted, low, high
+  const paths = {
+    mute: 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z',
+    low:  'M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z',
+    high: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z'
+  };
+  volIcon.querySelector('path').setAttribute('d', v===0 ? paths.mute : v < 0.5 ? paths.low : paths.high);
+}
+function toggleMute() {
+  if (vid.muted || vid.volume===0) { vid.muted=false; setVolume(lastVol||0.7); }
+  else { lastVol=vid.volume; setVolume(0); }
+}
+
+// Volume drag
+function setVolFromEvent(e) {
+  const r = volSlider.getBoundingClientRect();
+  const v = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  lastVol = v || lastVol;
+  setVolume(v);
+}
+volSlider.addEventListener('mousedown', e => { isDraggingVol=true; setVolFromEvent(e); e.preventDefault(); });
+document.addEventListener('mousemove',  e => { if (isDraggingVol) setVolFromEvent(e); });
+document.addEventListener('mouseup',    e => { if (isDraggingVol) { isDraggingVol=false; } });
+
+// Scroll to change volume on player
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  setVolume(Math.max(0, Math.min(1, vid.volume + (e.deltaY < 0 ? 0.1 : -0.1))));
+  showVolToast();
+}, { passive: false });
+
+// Volume toast on scroll
+const volToast = document.createElement('div');
+volToast.className = 'vol-toast';
+wrap.appendChild(volToast);
+let volToastTimer;
+function showVolToast() {
+  volToast.textContent = Math.round(vid.volume * 100) + '%';
+  volToast.classList.add('show');
+  clearTimeout(volToastTimer);
+  volToastTimer = setTimeout(() => volToast.classList.remove('show'), 1200);
+}
+
+// Fullscreen
+function toggleFullscreen() {
+  if (!document.fullscreenElement) wrap.requestFullscreen?.();
+  else document.exitFullscreen?.();
+}
+document.addEventListener('fullscreenchange', () => {
+  const fs = !!document.fullscreenElement;
+  wrap.classList.toggle('fullscreen-active', fs);
+});
+
+// Init volume
+setVolume(1);
+vid.addEventListener('loadedmetadata', updateProgress);
+
+function fmtTime(s) {
+  if (isNaN(s)) return '0:00';
+  const m = Math.floor(s/60), sec = Math.floor(s%60);
+  return m + ':' + String(sec).padStart(2,'0');
+}
+
+// ── Like/Save/Subscribe ───────────────────────────────────────────────────────
 async function toggleLike(uuid) {
-  {% if not session.user_id %}window.location='/login';return;{% endif %}
-  const res = await fetch(`/api/like/${uuid}`, {method:'POST'});
-  const d   = await res.json();
-  document.getElementById('like-count').textContent = d.count;
+  const r = await fetch(`/api/like/${uuid}`, {method:'POST'});
+  if (r.status===401) { location='/login'; return; }
+  const d = await r.json();
   document.getElementById('like-btn').classList.toggle('active', d.liked);
+  document.getElementById('like-count').textContent = d.count;
 }
-
 async function toggleSave(uuid) {
-  {% if not session.user_id %}window.location='/login';return;{% endif %}
-  const res = await fetch(`/api/save/${uuid}`, {method:'POST'});
-  const d   = await res.json();
-  document.getElementById('save-btn').classList.toggle('active', d.saved);
-  document.getElementById('save-label').textContent = d.saved ? 'Saved' : 'Save';
+  const r = await fetch(`/api/save/${uuid}`, {method:'POST'});
+  if (r.status===401) { location='/login'; return; }
+  const d = await r.json();
+  const btn = document.getElementById('save-btn');
+  btn.classList.toggle('active', d.saved);
+  btn.innerHTML = btn.innerHTML.replace(/Save.*/, d.saved ? 'Saved' : 'Save');
 }
-
 async function toggleSub(channelId) {
-  const res = await fetch(`/api/subscribe/${channelId}`, {method:'POST'});
-  const d   = await res.json();
+  const r = await fetch(`/api/subscribe/${channelId}`, {method:'POST'});
+  if (r.status===401) { location='/login'; return; }
+  const d = await r.json();
   const btn = document.getElementById('sub-btn');
   btn.classList.toggle('subbed', d.subbed);
   btn.textContent = d.subbed ? 'Subscribed' : 'Subscribe';
-  const plural = d.count !== 1 ? 's' : '';
-  document.getElementById('sub-count-txt').textContent = `${d.count} subscriber${plural}`;
+  document.getElementById('sub-count').textContent = d.count.toLocaleString() + ' subscribers';
 }
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+function autoResize(el) { el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
 
 async function postComment(uuid) {
   const input = document.getElementById('comment-input');
   const body  = input.value.trim();
   if (!body) return;
-  const res = await fetch(`/api/comment/${uuid}`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
+  const r = await fetch(`/api/comment/${uuid}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({body})
   });
-  if (!res.ok) return;
-  const d   = await res.json();
-  const init = d.username[0].toUpperCase();
+  const d = await r.json();
+  if (!r.ok) { showToast(d.error || 'Could not post comment.'); return; }
+  input.value = ''; input.style.height = 'auto';
   const avatarHtml = d.avatar
-    ? `<img src="/uploads/${d.avatar}" class="avatar-sm">`
-    : `<div class="avatar-sm avatar-placeholder">${init}</div>`;
+    ? `<img src="/uploads/${d.avatar}" class="avatar-sm" alt="">`
+    : `<div class="avatar-sm avatar-placeholder" style="font-size:14px">${d.username[0].toUpperCase()}</div>`;
+  const verifiedBadge = d.is_verified ? '<span class="verify-badge">✓</span>' : '';
   const html = `
-    <div class="comment">
-      ${avatarHtml}
+    <div class="comment" id="comment-${d.id}">
+      <a href="/channel/${d.commenter_id}">${avatarHtml}</a>
       <div class="comment-body">
-        <span class="comment-author">${d.username}</span>
-        <span class="comment-time">just now</span>
+        <div>
+          <a href="/channel/${d.commenter_id}" class="comment-author">${d.username}</a>
+          ${verifiedBadge}
+          <span class="comment-time">just now</span>
+        </div>
         <p class="comment-text">${d.body}</p>
+        <div class="comment-actions">
+          <button class="comment-vote-btn" onclick="voteComment(${d.id},1,this)">👍 <span class="vote-count">0</span></button>
+          <button class="comment-vote-btn" onclick="voteComment(${d.id},-1,this)">👎 <span class="vote-count">0</span></button>
+          <button class="report-btn" style="font-size:12px;padding:2px 8px" onclick="openReportModal('comment',${d.id})">🚩</button>
+        </div>
       </div>
     </div>`;
   document.getElementById('comments-list').insertAdjacentHTML('afterbegin', html);
-  input.value = '';
+}
+
+async function voteComment(commentId, vote, btn) {
+  const r = await fetch(`/api/comment-vote/${commentId}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({vote})
+  });
+  if (r.status===401) { location='/login'; return; }
+  const d = await r.json();
+  // Find sibling buttons
+  const actions = btn.closest('.comment-actions');
+  const [upBtn, downBtn] = actions.querySelectorAll('.comment-vote-btn');
+  upBtn.classList.toggle('voted-up',   d.user_vote===1);
+  downBtn.classList.toggle('voted-down', d.user_vote===-1);
+  upBtn.querySelector('.vote-count').textContent   = d.likes;
+  downBtn.querySelector('.vote-count').textContent = d.dislikes;
 }
 </script>
 {% endblock %}

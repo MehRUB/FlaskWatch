@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Account Settings - FlaskTube{% endblock %}
+{% block content %}
+<div class="form-page" style="max-width:600px">
+  <h2 style="margin-bottom:8px">Account Settings</h2>
+  <p style="color:var(--text2);margin-bottom:32px;font-size:14px">Manage your account preferences</p>
+
+  <!-- Change Password -->
+  <div class="settings-card">
+    <h3 class="settings-section-title">🔒 Change Password</h3>
+    <form method="post" action="{{ url_for('change_password') }}">
+      <div class="form-group">
+        <label>Current Password</label>
+        <input type="password" name="old_password" class="form-input" required placeholder="Enter current password">
+      </div>
+      <div class="form-group">
+        <label>New Password</label>
+        <input type="password" name="new_password" class="form-input" required placeholder="At least 6 characters">
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password</label>
+        <input type="password" name="confirm_password" class="form-input" required placeholder="Repeat new password">
+      </div>
+      <button type="submit" class="settings-btn">Update Password</button>
+    </form>
+  </div>
+
+  <!-- Change Email -->
+  <div class="settings-card">
+    <h3 class="settings-section-title">✉️ Change Email</h3>
+    <form method="post" action="{{ url_for('change_email') }}">
+      <div class="form-group">
+        <label>Current Email</label>
+        <input type="text" class="form-input" value="{{ user.email }}" disabled style="opacity:.5">
+      </div>
+      <div class="form-group">
+        <label>New Email</label>
+        <input type="email" name="new_email" class="form-input" required placeholder="new@email.com">
+      </div>
+      <div class="form-group">
+        <label>Confirm with Password</label>
+        <input type="password" name="password" class="form-input" required placeholder="Your current password">
+      </div>
+      <button type="submit" class="settings-btn">Update Email</button>
+    </form>
+  </div>
+
+  <!-- Channel Settings shortcut -->
+  <div class="settings-card">
+    <h3 class="settings-section-title">🎬 Channel Settings</h3>
+    <p style="color:var(--text2);font-size:14px;margin-bottom:16px">Customize your channel name, avatar, banner and bio.</p>
+    <a href="{{ url_for('edit_channel', channel_id=user.id) }}" class="settings-btn" style="display:inline-block;text-decoration:none">Go to Channel Settings</a>
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="settings-card settings-danger">
+    <h3 class="settings-section-title" style="color:var(--red)">⚠️ Danger Zone</h3>
+    <p style="color:var(--text2);font-size:14px;margin-bottom:16px">Permanently delete your account and all your videos. This cannot be undone.</p>
+    <button onclick="document.getElementById('delete-modal').style.display='flex'" class="settings-btn settings-btn-danger">Delete My Account</button>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-backdrop" id="delete-modal" style="display:none">
+  <div class="modal">
+    <h3>⚠️ Delete account?</h3>
+    <p style="color:var(--text2);font-size:14px;margin:12px 0 20px">This will permanently delete your account and all your videos. There is no going back.</p>
+    <form method="post" action="{{ url_for('delete_account') }}">
+      <div class="form-group">
+        <label>Enter your password to confirm</label>
+        <input type="password" name="password" class="form-input" required placeholder="Your password">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" onclick="document.getElementById('delete-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="modal-btn modal-btn-submit">Yes, delete my account</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -598,3 +598,158 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
   .topbar { gap: 8px; }
   .search-form { max-width: 200px; }
 }
+
+/* ── Verification Badge ───────────────────────────────────────────────────── */
+.verify-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--blue); color: #fff;
+  font-size: 10px; font-weight: 700;
+  width: 16px; height: 16px; border-radius: 50%;
+  flex-shrink: 0; cursor: default;
+}
+.admin-channel-badge {
+  background: var(--red); color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 4px;
+}
+
+/* ── Comment Votes ────────────────────────────────────────────────────────── */
+.comment-vote-btn {
+  background: none; border: none; color: var(--text2);
+  font-size: 13px; cursor: pointer; padding: 4px 8px;
+  border-radius: 20px; display: inline-flex; align-items: center; gap: 4px;
+  transition: background .15s, color .15s;
+}
+.comment-vote-btn:hover { background: var(--bg3); color: var(--text); }
+.comment-vote-btn.voted-up   { color: var(--blue); }
+.comment-vote-btn.voted-down { color: var(--red);  }
+
+/* ── Settings Page ────────────────────────────────────────────────────────── */
+.settings-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+}
+.settings-card.settings-danger { border-color: var(--red); }
+.settings-section-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+.settings-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 10px 20px; border-radius: var(--radius);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.settings-btn:hover { background: var(--border); }
+.settings-btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+.settings-btn-danger:hover { background: var(--red-hover); }
+
+/* ── Video Player ─────────────────────────────────────────────────────────── */
+.player-wrap {
+  position: relative; background: #000;
+  border-radius: var(--radius); overflow: hidden;
+  aspect-ratio: 16/9; cursor: pointer;
+  user-select: none;
+}
+.player-wrap.fullscreen-active { border-radius: 0; }
+
+/* Click overlay — covers the video for click-to-pause */
+#click-overlay {
+  position: absolute; inset: 0; z-index: 2;
+}
+
+/* Play feedback flash */
+.play-feedback {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  font-size: 52px; opacity: 0;
+  transition: opacity .15s, transform .15s;
+  pointer-events: none; z-index: 10;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,.8));
+}
+.play-feedback.show {
+  opacity: 1; transform: translate(-50%, -50%) scale(1);
+}
+
+/* Controls bar */
+.player-controls {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.85));
+  padding: 32px 12px 10px;
+  opacity: 0; transition: opacity .2s; z-index: 5;
+  pointer-events: none;
+}
+.player-controls.visible { opacity: 1; pointer-events: all; }
+#player-wrap:hover .player-controls { opacity: 1; pointer-events: all; }
+
+/* Progress bar */
+.progress-wrap {
+  position: relative; height: 4px; background: rgba(255,255,255,.2);
+  border-radius: 2px; margin-bottom: 10px; cursor: pointer;
+  transition: height .15s;
+}
+.progress-wrap:hover { height: 7px; }
+.progress-wrap:hover .progress-thumb { transform: translate(-50%,-50%) scale(1); }
+.progress-buffered {
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: rgba(255,255,255,.3); border-radius: 2px; pointer-events: none;
+}
+.progress-fill {
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: var(--red); border-radius: 2px; pointer-events: none;
+}
+.progress-thumb {
+  position: absolute; top: 50%; width: 13px; height: 13px;
+  background: var(--red); border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform .15s; pointer-events: none;
+}
+
+/* Controls row */
+.controls-row {
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 8px;
+}
+.controls-left, .controls-right {
+  display: flex; align-items: center; gap: 4px;
+}
+.ctrl-btn {
+  background: none; border: none; color: #fff;
+  padding: 6px; border-radius: 4px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: .85; transition: opacity .15s;
+}
+.ctrl-btn:hover { opacity: 1; background: rgba(255,255,255,.1); }
+.time-display { color: #fff; font-size: 13px; white-space: nowrap; padding: 0 4px; }
+
+/* Volume slider */
+.volume-wrap { display: flex; align-items: center; gap: 4px; }
+.volume-slider-wrap {
+  width: 0; overflow: hidden; transition: width .2s;
+  display: flex; align-items: center;
+}
+.volume-wrap:hover .volume-slider-wrap { width: 80px; }
+.volume-slider {
+  position: relative; width: 72px; height: 4px;
+  background: rgba(255,255,255,.3); border-radius: 2px; cursor: pointer;
+  flex-shrink: 0;
+}
+.volume-slider:hover { height: 6px; }
+.volume-slider:hover .volume-thumb { transform: translate(-50%,-50%) scale(1); }
+.volume-fill {
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: #fff; border-radius: 2px; pointer-events: none;
+}
+.volume-thumb {
+  position: absolute; top: 50%; width: 12px; height: 12px;
+  background: #fff; border-radius: 50%;
+  transform: translate(-50%,-50%) scale(0);
+  transition: transform .15s; pointer-events: none;
+}
+
+/* Volume toast (scroll feedback) */
+.vol-toast {
+  position: absolute; top: 16px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.7); color: #fff;
+  padding: 6px 14px; border-radius: 20px;
+  font-size: 14px; font-weight: 600;
+  opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20;
+}
+.vol-toast.show { opacity: 1; }
