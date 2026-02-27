@@ -54,74 +54,89 @@ def close_db(e=None):
 
 def init_db():
     db = sqlite3.connect(DB_PATH)
-    # 1. Create Core Tables (Safe with IF NOT EXISTS)
     db.executescript('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            avatar TEXT, banner TEXT, bio TEXT DEFAULT '',
-            channel_name TEXT, channel_links TEXT DEFAULT '',
-            is_verified INTEGER DEFAULT 0,
-            created TEXT DEFAULT (datetime('now'))
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            username       TEXT    UNIQUE NOT NULL,
+            email          TEXT    UNIQUE NOT NULL,
+            password       TEXT    NOT NULL,
+            avatar         TEXT    DEFAULT NULL,
+            banner         TEXT    DEFAULT NULL,
+            bio            TEXT    DEFAULT '',
+            channel_name   TEXT    DEFAULT NULL,
+            channel_links  TEXT    DEFAULT '',
+            is_verified    INTEGER DEFAULT 0,
+            created        TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS videos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            uuid TEXT UNIQUE NOT NULL,
-            user_id INTEGER NOT NULL REFERENCES users(id),
-            title TEXT NOT NULL,
-            description TEXT DEFAULT '',
-            filename TEXT NOT NULL,
-            thumbnail TEXT DEFAULT NULL,
-            views INTEGER DEFAULT 0,
-            visibility TEXT DEFAULT 'public',
-            scheduled_at TEXT DEFAULT NULL,
-            category TEXT DEFAULT 'General',
-            is_removed INTEGER DEFAULT 0,
-            created TEXT DEFAULT (datetime('now'))
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid          TEXT    UNIQUE NOT NULL,
+            user_id       INTEGER NOT NULL REFERENCES users(id),
+            title         TEXT    NOT NULL,
+            description   TEXT    DEFAULT '',
+            filename      TEXT    NOT NULL,
+            thumbnail     TEXT    DEFAULT NULL,
+            views         INTEGER DEFAULT 0,
+            is_removed    INTEGER DEFAULT 0,
+            created       TEXT    DEFAULT (datetime('now'))
         );
-        CREATE TABLE IF NOT EXISTS community_posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id),
-            content TEXT NOT NULL,
-            image_path TEXT,
-            created TEXT DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS watch_history (
-            user_id INTEGER REFERENCES users(id),
-            video_id INTEGER REFERENCES videos(id),
-            watched_at TEXT DEFAULT (datetime('now')),
+        CREATE TABLE IF NOT EXISTS likes (
+            user_id  INTEGER NOT NULL REFERENCES users(id),
+            video_id INTEGER NOT NULL REFERENCES videos(id),
             PRIMARY KEY (user_id, video_id)
         );
-        CREATE TABLE IF NOT EXISTS tags (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL
+        CREATE TABLE IF NOT EXISTS comment_votes (
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            comment_id INTEGER NOT NULL REFERENCES comments(id),
+            vote       INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (user_id, comment_id)
         );
-        CREATE TABLE IF NOT EXISTS video_tags (
-            video_id INTEGER REFERENCES videos(id),
-            tag_id INTEGER REFERENCES tags(id),
-            PRIMARY KEY (video_id, tag_id)
+        CREATE TABLE IF NOT EXISTS comments (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            video_id   INTEGER NOT NULL REFERENCES videos(id),
+            body       TEXT    NOT NULL,
+            is_removed INTEGER DEFAULT 0,
+            created    TEXT    DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            subscriber_id INTEGER NOT NULL REFERENCES users(id),
+            channel_id    INTEGER NOT NULL REFERENCES users(id),
+            PRIMARY KEY (subscriber_id, channel_id)
+        );
+        CREATE TABLE IF NOT EXISTS saved_videos (
+            user_id  INTEGER NOT NULL REFERENCES users(id),
+            video_id INTEGER NOT NULL REFERENCES videos(id),
+            saved_at TEXT    DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, video_id)
+        );
+        CREATE TABLE IF NOT EXISTS reports (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            reporter_id INTEGER REFERENCES users(id),
+            video_id    INTEGER REFERENCES videos(id),
+            comment_id  INTEGER REFERENCES comments(id),
+            reason      TEXT    NOT NULL,
+            status      TEXT    DEFAULT 'pending',
+            created     TEXT    DEFAULT (datetime('now'))
         );
     ''')
-
-    # 2. Add Missing Columns Safely (The "Migration Loop")
-    # This prevents the "duplicate column name" error
     migrations = [
-        ('videos', 'visibility', "TEXT DEFAULT 'public'"),
-        ('videos', 'scheduled_at', "TEXT DEFAULT NULL"),
-        ('videos', 'category', "TEXT DEFAULT 'General'"),
-        ('comments', 'is_pinned', "INTEGER DEFAULT 0"),
-        ('comments', 'parent_id', "INTEGER REFERENCES comments(id) DEFAULT NULL"),
-        ('subscriptions', 'notify', "INTEGER DEFAULT 1"),
+        ('users',         'banner',        'TEXT DEFAULT NULL'),
+        ('users',         'channel_name',  'TEXT DEFAULT NULL'),
+        ('users',         'channel_links', "TEXT DEFAULT ''"),
+        ('users',         'is_verified',   'INTEGER DEFAULT 0'),
+        ('videos',        'is_removed',    'INTEGER DEFAULT 0'),
+        ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
     ]
-
     for table, col, defn in migrations:
-        try:
-            db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
-        except sqlite3.OperationalError:
-            pass # Column already exists, skip it
-
+        try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
+        except: pass
+    # Create comment_votes if missing
+    try:
+        db.execute('''CREATE TABLE IF NOT EXISTS comment_votes (
+            user_id INTEGER NOT NULL, comment_id INTEGER NOT NULL,
+            vote INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (user_id, comment_id))''')
+    except: pass
     db.commit()
     db.close()
 

@@ -8,78 +8,108 @@
     <span class="badge badge-pending">{{ stats.pending_reports }} pending</span>
   </div>
 
+  <!-- Stats -->
   <div class="admin-stats">
     <div class="stat-card">
       <div class="stat-number">{{ stats.total_users }}</div>
       <div class="stat-label">Total Users</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.total_videos }}</div>
+      <div class="stat-label">Active Videos</div>
     </div>
-
-  <h2 class="admin-section-title">User Management</h2>
-  <div class="report-card" style="padding: 20px;">
-    <div style="margin-bottom: 15px;">
-      <input type="text" id="userSearch" class="form-input" placeholder="Search users by name or email..." onkeyup="filterUsers()">
+    <div class="stat-card warn">
+      <div class="stat-number">{{ stats.pending_reports }}</div>
+      <div class="stat-label">Pending Reports</div>
     </div>
-    <div style="overflow-x: auto;">
-      <table style="width: 100%; border-collapse: collapse; color: var(--text);">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--border); text-align: left;">
-            <th style="padding: 10px;">User</th>
-            <th style="padding: 10px;">Email</th>
-            <th style="padding: 10px;">Status</th>
-            <th style="padding: 10px;">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="userTableBody">
-          {% for user in all_users %}
-          <tr style="border-bottom: 1px solid var(--border);">
-            <td style="padding: 10px;"><strong>{{ user.username }}</strong></td>
-            <td style="padding: 10px; color: var(--text2);">{{ user.email }}</td>
-            <td style="padding: 10px;">
-              {% if user.is_verified %}
-                <span class="badge" style="background: var(--blue); color: white;">✓ Verified</span>
-              {% else %}
-                <span class="badge" style="background: var(--bg3);">Standard</span>
-              {% endif %}
-            </td>
-            <td style="padding: 10px;">
-              <form method="post" action="{{ url_for('admin_verify_user', user_id=user.id) }}" style="display:inline">
-                {% if user.is_verified %}
-                  <button class="btn btn-neutral" style="font-size: 12px;">Revoke Badge</button>
-                {% else %}
-                  <button class="btn btn-success" style="font-size: 12px;">Grant Badge</button>
-                {% endif %}
-              </form>
-              
-              <form method="post" action="{{ url_for('admin_ban_user', user_id=user.id) }}" 
-                    style="display:inline" onsubmit="return confirm('Ban this user?')">
-                <button class="btn btn-danger" style="font-size: 12px;">Ban</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="stat-card danger">
+      <div class="stat-number">{{ stats.removed_videos }}</div>
+      <div class="stat-label">Removed Videos</div>
     </div>
   </div>
 
+  <!-- Reports -->
   <h2 class="admin-section-title">Reports</h2>
+
   {% if reports %}
-    {% endif %}
+    {% for r in reports %}
+    <div class="report-card {% if r.status != 'pending' %}resolved{% endif %}">
+      <div class="report-meta">
+        <span>#{{ r.id }}</span> &nbsp;·&nbsp;
+        Reported by <span>{{ r.reporter_name or 'Anonymous' }}</span> &nbsp;·&nbsp;
+        {{ time_ago(r.created) }} &nbsp;·&nbsp;
+        <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+      </div>
+
+      <div class="report-reason">
+        <strong>Reason:</strong> {{ r.reason }}
+      </div>
+
+      <!-- Video report -->
+      {% if r.video_uuid %}
+      <div class="report-content">
+        {% if r.video_removed %}
+          <span style="color:var(--red)">🗑 Video already removed</span> —
+          <em>{{ r.video_title }}</em>
+        {% else %}
+          📹 Video: <a href="{{ url_for('watch', vid_uuid=r.video_uuid) }}" target="_blank">{{ r.video_title }}</a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Comment report -->
+      {% if r.comment_body %}
+      <div class="report-content">
+        {% if r.comment_removed %}
+          <span style="color:var(--red)">🗑 Comment already removed</span>
+        {% else %}
+          💬 Comment by <strong>{{ r.commenter_name }}</strong>:
+          "{{ r.comment_body | truncate(120) }}"
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Actions -->
+      {% if r.status == 'pending' %}
+      <div class="report-actions">
+        {% if r.video_uuid and not r.video_removed %}
+        <form method="post" action="{{ url_for('admin_remove_video', vid_uuid=r.video_uuid) }}" style="display:inline">
+          <button class="btn btn-danger">🗑 Remove Video</button>
+        </form>
+        {% endif %}
+        {% if r.video_uuid and r.video_removed %}
+        <form method="post" action="{{ url_for('admin_restore_video', vid_uuid=r.video_uuid) }}" style="display:inline">
+          <button class="btn btn-success">↩ Restore Video</button>
+        </form>
+        {% endif %}
+        {% if r.comment_id and not r.comment_removed %}
+        <form method="post" action="{{ url_for('admin_remove_comment', comment_id=r.comment_id) }}" style="display:inline">
+          <button class="btn btn-danger">🗑 Remove Comment</button>
+        </form>
+        {% endif %}
+        {% if r.reporter_id and r.video_id %}
+        <form method="post" action="{{ url_for('admin_ban_user', user_id=r.reporter_id) }}"
+              style="display:inline"
+              onsubmit="return confirm('Ban this user and remove ALL their content?')">
+          <button class="btn btn-neutral" style="color:var(--red)">🚫 Ban Uploader</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('admin_dismiss_report', report_id=r.id) }}" style="display:inline">
+          <button class="btn btn-neutral">✓ Dismiss</button>
+        </form>
+      </div>
+      {% else %}
+      <div style="font-size:13px;color:var(--text2);margin-top:8px">
+        {% if r.status == 'resolved' %}✅ Resolved{% else %}✓ Dismissed{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="no-reports">
+      ✅ No reports yet — your community is clean!
+    </div>
+  {% endif %}
 
 </div>
-
-<script>
-// Search function for the management table
-function filterUsers() {
-  const input = document.getElementById('userSearch');
-  const filter = input.value.toLowerCase();
-  const rows = document.querySelectorAll('#userTableBody tr');
-
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = text.includes(filter) ? '' : 'none';
-  });
-}
-</script>
 {% endblock %}
