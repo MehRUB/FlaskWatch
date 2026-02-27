@@ -10,6 +10,7 @@ import secrets
 import base64
 import threading
 from datetime import datetime
+from email.mime.text import MIMEText
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, send_from_directory, g)
@@ -197,44 +198,28 @@ app.jinja_env.globals.update(
 # ─── Email via Gmail SMTP ─────────────────────────────────────────────────────
 
 def send_verification_email(to_email, token):
-    import requests
-    
-    api_key = os.environ.get('RESEND_API_KEY')
-    if not api_key:
-        print("[EMAIL ERROR] Missing RESEND_API_KEY")
+    gmail_user = os.environ.get('GMAIL_USER')
+    gmail_pass = os.environ.get('GMAIL_PASS')
+    site_url = os.environ.get('SITE_URL')
+
+    if not gmail_user or not gmail_pass:
+        print("[EMAIL ERROR] Missing environment variables")
         return False
 
-    verify_url = f'{SITE_URL}/verify/{token}'
+    msg = MIMEText(f'Click here to verify: {site_url}/verify/{token}')
+    msg['Subject'] = 'Verify your FlaskTube account'
+    msg['From'] = gmail_user
+    msg['To'] = to_email
 
     try:
-        # We send a standard POST request (Port 443) which isn't blocked
-        res = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "from": "onboarding@resend.dev", # Resend's default test email
-                "to": to_email,
-                "subject": "Verify your FlaskTube account",
-                "html": f"""
-                    <div style="font-family:sans-serif;max-width:500px;margin:auto;">
-                        <h2>🎬 FlaskTube</h2>
-                        <p>Verify your account by clicking the link below:</p>
-                        <a href="{verify_url}" style="background:#ff0000;color:#fff;padding:10px;text-decoration:none;">
-                            Verify my account
-                        </a>
-                    </div>
-                """
-            }
-        )
-        
-        if res.status_code == 200:
-            print(f'[EMAIL SENT] via Resend to={to_email}')
-            return True
-        else:
-            print(f'[EMAIL ERROR] Resend API: {res.text}')
-            return False
-            
+        # We use SMTP_SSL and Port 465 instead of 587
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10) as server:
+            server.login(gmail_user, gmail_pass)
+            server.send_message(msg)
+        print(f'[EMAIL SENT] to {to_email}')
+        return True
     except Exception as e:
+        # If this still says "Network is unreachable", the port is blocked
         print(f'[EMAIL ERROR] {e}')
         return False
 
