@@ -782,6 +782,85 @@ def edit_channel(channel_id):
     return render_template('edit_channel.html', owner=owner)
 
 
+# ─── Creator Tools ────────────────────────────────────────────────────────────
+
+@app.route('/studio')
+@login_required
+def studio():
+    db = get_db()
+    uid = session['user_id']
+    videos = db.execute('''
+        SELECT v.*,
+               (SELECT COUNT(*) FROM likes    WHERE video_id=v.id) AS like_count,
+               (SELECT COUNT(*) FROM comments WHERE video_id=v.id AND is_removed=0) AS comment_count
+        FROM videos v
+        WHERE v.user_id=? AND v.is_removed=0
+        ORDER BY v.created DESC
+    ''', (uid,)).fetchall()
+    total_views = sum(v['views'] for v in videos)
+    total_subs  = db.execute('SELECT COUNT(*) FROM subscriptions WHERE channel_id=?', (uid,)).fetchone()[0]
+    total_likes = sum(v['like_count'] for v in videos)
+    return render_template('studio.html', videos=videos,
+                           total_views=total_views, total_subs=total_subs,
+                           total_likes=total_likes)
+
+@app.route('/studio/edit/<vid_uuid>', methods=['GET', 'POST'])
+@login_required
+def edit_video(vid_uuid):
+    db    = get_db()
+    uid   = session['user_id']
+    video = db.execute('SELECT * FROM videos WHERE uuid=? AND user_id=? AND is_removed=0', (vid_uuid, uid)).fetchone()
+    if not video:
+        flash('Video not found or access denied.', 'error')
+        return redirect(url_for('studio'))
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        desc  = request.form.get('description', '').strip()
+        if not title:
+            flash('Title is required.', 'error')
+            return redirect(url_for('edit_video', vid_uuid=vid_uuid))
+        thumb = request.files.get('thumbnail')
+        thumb_filename = video['thumbnail']
+        if thumb and thumb.filename and allowed_image(thumb.filename):
+            thumb_filename = save_file(thumb, 'thumbnails')
+        db.execute('UPDATE videos SET title=?, description=?, thumbnail=? WHERE uuid=? AND user_id=?',
+                   (title, desc, thumb_filename, vid_uuid, uid))
+        db.commit()
+        flash('Video updated!', 'success')
+        return redirect(url_for('studio'))
+    return render_template('edit_video.html', video=video)
+
+@app.route('/studio/delete/<vid_uuid>', methods=['POST'])
+@login_required
+def delete_video(vid_uuid):
+    db  = get_db()
+    uid = session['user_id']
+    video = db.execute('SELECT id FROM videos WHERE uuid=? AND user_id=? AND is_removed=0', (vid_uuid, uid)).fetchone()
+    if not video:
+        flash('Video not found.', 'error')
+        return redirect(url_for('studio'))
+    db.execute('UPDATE videos SET is_removed=1 WHERE uuid=? AND user_id=?', (vid_uuid, uid))
+    db.commit()
+    flash('Video deleted.', 'success')
+    return redirect(url_for('studio'))
+
+@app.route('/api/studio/stats')
+@login_required
+def studio_stats():
+    db  = get_db()
+    uid = session['user_id']
+    # Last 7 videos' view counts for a simple chart
+    rows = db.execute('''
+        SELECT title, views, created,
+               (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS likes
+        FROM videos v
+        WHERE user_id=? AND is_removed=0
+        ORDER BY created DESC LIMIT 7
+    ''', (uid,)).fetchall()
+    return jsonify([{'title': r['title'], 'views': r['views'],
+                     'likes': r['likes'], 'created': r['created']} for r in rows])
+
+
 # ─── Library ──────────────────────────────────────────────────────────────────
 
 @app.route('/library')

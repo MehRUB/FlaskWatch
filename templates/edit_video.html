@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}Edit Video - FlaskTube{% endblock %}
+{% block content %}
+<div class="form-page">
+  <div class="edit-channel-header">
+    <h2>Edit Video</h2>
+    <a href="{{ url_for('studio') }}" class="back-link">← Back to Studio</a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="upload-form">
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" name="title" required class="form-input"
+             value="{{ video.title }}" placeholder="Enter video title">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea name="description" class="form-input" rows="5"
+                placeholder="Describe your video...">{{ video.description or '' }}</textarea>
+    </div>
+    <div class="form-group">
+      <label>Thumbnail <span class="hint">(optional — replace current thumbnail)</span></label>
+      {% if video.thumbnail %}
+      <div style="margin-bottom:12px">
+        <img src="{{ url_for('uploaded_file', filename=video.thumbnail) }}"
+             style="max-width:280px;border-radius:8px;border:1px solid var(--border)" alt="Current thumbnail">
+        <p style="color:var(--text2);font-size:12px;margin-top:6px">Current thumbnail</p>
+      </div>
+      {% endif %}
+      <div class="file-drop" id="thumb-drop">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="#aaa"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        <p>Click to upload a new thumbnail</p>
+        <input type="file" name="thumbnail" accept="image/*" id="thumb-input"
+               onchange="showName(this,'thumb-name')" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+      </div>
+      <div id="thumb-name" class="file-name"></div>
+    </div>
+
+    <div class="form-actions" style="margin-top:24px">
+      <a href="{{ url_for('studio') }}" class="cancel-btn">Cancel</a>
+      <button type="submit" class="submit-btn" style="width:auto;padding:12px 32px">Save Changes</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function showName(input, targetId) {
+  if (input.files[0]) {
+    document.getElementById(targetId).textContent = '✓ ' + input.files[0].name;
+  }
+}
+</script>
+{% endblock %}

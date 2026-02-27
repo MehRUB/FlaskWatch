@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}Creator Studio - FlaskTube{% endblock %}
+{% block content %}
+<div class="studio-layout">
+
+  <div class="studio-header">
+    <div>
+      <h1 class="studio-title">🎬 Creator Studio</h1>
+      <p style="color:var(--text2);font-size:14px;margin-top:4px">Manage your content and track performance</p>
+    </div>
+    <a href="{{ url_for('upload') }}" class="upload-btn" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+      Upload Video
+    </a>
+  </div>
+
+  <!-- Stats Overview -->
+  <div class="studio-stats">
+    <div class="studio-stat-card">
+      <div class="studio-stat-icon" style="background:rgba(255,0,0,0.15);color:#ff6b6b">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+      </div>
+      <div>
+        <div class="studio-stat-number">{{ "{:,}".format(total_views) }}</div>
+        <div class="studio-stat-label">Total Views</div>
+      </div>
+    </div>
+    <div class="studio-stat-card">
+      <div class="studio-stat-icon" style="background:rgba(62,166,255,0.15);color:#3ea6ff">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+      </div>
+      <div>
+        <div class="studio-stat-number">{{ "{:,}".format(total_subs) }}</div>
+        <div class="studio-stat-label">Subscribers</div>
+      </div>
+    </div>
+    <div class="studio-stat-card">
+      <div class="studio-stat-icon" style="background:rgba(46,204,113,0.15);color:#2ecc71">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg>
+      </div>
+      <div>
+        <div class="studio-stat-number">{{ "{:,}".format(total_likes) }}</div>
+        <div class="studio-stat-label">Total Likes</div>
+      </div>
+    </div>
+    <div class="studio-stat-card">
+      <div class="studio-stat-icon" style="background:rgba(243,156,18,0.15);color:#f39c12">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+      </div>
+      <div>
+        <div class="studio-stat-number">{{ videos|length }}</div>
+        <div class="studio-stat-label">Videos</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video List -->
+  <div class="studio-section">
+    <h2 class="studio-section-title">Your Videos</h2>
+
+    {% if videos %}
+    <div class="studio-table-wrap">
+      <table class="studio-table">
+        <thead>
+          <tr>
+            <th>Video</th>
+            <th>Views</th>
+            <th>Likes</th>
+            <th>Comments</th>
+            <th>Uploaded</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in videos %}
+          <tr class="studio-row">
+            <td class="studio-video-cell">
+              <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="studio-thumb-link">
+                {% if v.thumbnail %}
+                  <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" class="studio-thumb" alt="">
+                {% else %}
+                  <div class="studio-thumb studio-thumb-placeholder">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="var(--text2)"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                {% endif %}
+              </a>
+              <div class="studio-video-info">
+                <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="studio-video-title">{{ v.title }}</a>
+                {% if v.description %}
+                  <p class="studio-video-desc">{{ v.description[:80] }}{% if v.description|length > 80 %}…{% endif %}</p>
+                {% endif %}
+              </div>
+            </td>
+            <td class="studio-num">{{ fmt_views(v.views) }}</td>
+            <td class="studio-num">{{ v.like_count }}</td>
+            <td class="studio-num">{{ v.comment_count }}</td>
+            <td class="studio-date">{{ time_ago(v.created) }}</td>
+            <td class="studio-actions-cell">
+              <a href="{{ url_for('edit_video', vid_uuid=v.uuid) }}" class="studio-action-btn studio-edit-btn" title="Edit">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                Edit
+              </a>
+              <button class="studio-action-btn studio-delete-btn"
+                      onclick="confirmDelete('{{ v.uuid }}', '{{ v.title|replace("'","\\'")|replace('"','&quot;') }}')"
+                      title="Delete">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                Delete
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <svg width="72" height="72" viewBox="0 0 24 24" fill="var(--text2)"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+      <p>No videos yet. Upload your first video to get started!</p>
+      <a href="{{ url_for('upload') }}" class="upload-btn" style="display:inline-block;margin-top:16px">Upload Video</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-backdrop" id="delete-video-modal" style="display:none">
+  <div class="modal">
+    <h3>🗑 Delete video?</h3>
+    <p id="delete-modal-title" style="color:var(--text2);font-size:14px;margin:12px 0 20px"></p>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:20px">This will permanently remove the video. This cannot be undone.</p>
+    <form id="delete-video-form" method="post">
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel"
+                onclick="document.getElementById('delete-video-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="modal-btn modal-btn-submit">Yes, delete</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function confirmDelete(uuid, title) {
+  document.getElementById('delete-video-modal').style.display = 'flex';
+  document.getElementById('delete-modal-title').textContent = '"' + title + '"';
+  document.getElementById('delete-video-form').action = '/studio/delete/' + uuid;
+}
+window.addEventListener('click', e => {
+  const m = document.getElementById('delete-video-modal');
+  if (e.target === m) m.style.display = 'none';
+});
+</script>
+{% endblock %}
