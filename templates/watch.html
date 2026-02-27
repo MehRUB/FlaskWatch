@@ -168,8 +168,8 @@
       {% endif %}
 
       <div id="comments-list">
-        {% for c in comments %}
-        <div class="comment" id="comment-{{ c.id }}">
+        {% for c in comments if not c.parent_id %}
+        <div class="comment {% if c.is_pinned %}comment-pinned{% endif %}" id="comment-{{ c.id }}">
           <a href="{{ url_for('channel', channel_id=c.commenter_id) }}">
             {% if c.avatar %}
               <img src="{{ url_for('uploaded_file', filename=c.avatar) }}" class="avatar-sm" alt="">
@@ -185,7 +185,10 @@
               {% if c.commenter_verified %}
                 <span class="verify-badge" title="Verified">✓</span>
               {% endif %}
-              <span class="comment-time">{{ time_ago(c.created) }}</span>
+              <span class="comment-time">
+                {% if c.is_pinned %}<span class="badge badge-accent">Pinned</span> · {% endif %}
+                {{ time_ago(c.created) }}
+              </span>
             </div>
             <p class="comment-text">{{ c.body }}</p>
             <div class="comment-actions">
@@ -198,11 +201,67 @@
                       onclick="voteComment({{ c.id }}, -1, this)">
                 👎 <span class="vote-count">{{ c.dislikes }}</span>
               </button>
+              <button class="comment-reply-btn" onclick="startReply({{ c.id }}, '{{ c.username }}')">Reply</button>
+              {% if session.user_id == video.channel_id or is_admin() %}
+              <button class="comment-pin-btn"
+                      onclick="togglePin({{ c.id }}, this)">{{ 'Unpin' if c.is_pinned else 'Pin' }}</button>
+              {% endif %}
+              {% if session.user_id == c.commenter_id or session.user_id == video.channel_id or is_admin() %}
+              <button class="comment-delete-btn"
+                      onclick="openDeleteCommentModal({{ c.id }}, this)">Delete</button>
+              {% endif %}
               <button class="report-btn" style="font-size:12px;padding:2px 8px"
                       onclick="openReportModal('comment', {{ c.id }})">🚩</button>
               {% else %}
               <span style="color:var(--text2);font-size:12px">👍 {{ c.likes }} &nbsp; 👎 {{ c.dislikes }}</span>
               {% endif %}
+            </div>
+            <!-- Replies -->
+            <div class="comment-replies">
+              {% for r in comments if r.parent_id == c.id %}
+              <div class="comment reply-comment" id="comment-{{ r.id }}">
+                <a href="{{ url_for('channel', channel_id=r.commenter_id) }}">
+                  {% if r.avatar %}
+                    <img src="{{ url_for('uploaded_file', filename=r.avatar) }}" class="avatar-sm" alt="">
+                  {% else %}
+                    <div class="avatar-sm avatar-placeholder" style="font-size:14px">{{ r.username[0].upper() }}</div>
+                  {% endif %}
+                </a>
+                <div class="comment-body">
+                  <div>
+                    <a href="{{ url_for('channel', channel_id=r.commenter_id) }}" class="comment-author">
+                      {{ r.username }}
+                    </a>
+                    {% if r.commenter_verified %}
+                      <span class="verify-badge" title="Verified">✓</span>
+                    {% endif %}
+                    <span class="comment-time">{{ time_ago(r.created) }}</span>
+                  </div>
+                  <p class="comment-text">{{ r.body }}</p>
+                  <div class="comment-actions">
+                    {% if session.user_id %}
+                    <button class="comment-vote-btn {% if user_votes.get(r.id) == 1 %}voted-up{% endif %}"
+                            onclick="voteComment({{ r.id }}, 1, this)">
+                      👍 <span class="vote-count">{{ r.likes }}</span>
+                    </button>
+                    <button class="comment-vote-btn {% if user_votes.get(r.id) == -1 %}voted-down{% endif %}"
+                            onclick="voteComment({{ r.id }}, -1, this)">
+                      👎 <span class="vote-count">{{ r.dislikes }}</span>
+                    </button>
+                    <button class="comment-reply-btn" onclick="startReply({{ c.id }}, '{{ r.username }}')">Reply</button>
+                  {% if session.user_id == r.commenter_id or session.user_id == video.channel_id or is_admin() %}
+                  <button class="comment-delete-btn"
+                          onclick="openDeleteCommentModal({{ r.id }}, this)">Delete</button>
+                  {% endif %}
+                    <button class="report-btn" style="font-size:12px;padding:2px 8px"
+                            onclick="openReportModal('comment', {{ r.id }})">🚩</button>
+                    {% else %}
+                    <span style="color:var(--text2);font-size:12px">👍 {{ r.likes }} &nbsp; 👎 {{ r.dislikes }}</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
             </div>
           </div>
         </div>
@@ -236,6 +295,20 @@
     </a>
     {% endfor %}
   </aside>
+</div>
+
+<!-- Delete Comment Modal -->
+<div class="modal-backdrop" id="delete-comment-modal" style="display:none">
+  <div class="modal">
+    <h3>Delete comment?</h3>
+    <p style="color:var(--text2);font-size:13px;margin:8px 0 18px">
+      This will remove the comment and its replies from this video.
+    </p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn modal-btn-cancel" onclick="closeDeleteCommentModal()">Cancel</button>
+      <button type="button" class="modal-btn modal-btn-submit" onclick="confirmDeleteComment()">Delete</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -467,19 +540,28 @@ async function postComment(uuid) {
   const input = document.getElementById('comment-input');
   const body  = input.value.trim();
   if (!body) return;
+  const parentId = input.dataset.parentId ? parseInt(input.dataset.parentId, 10) : null;
   const r = await fetch(`/api/comment/${uuid}`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({body})
+    body: JSON.stringify({body, parent_id: parentId})
   });
   const d = await r.json();
   if (!r.ok) { showToast(d.error || 'Could not post comment.'); return; }
   input.value = ''; input.style.height = 'auto';
+  delete input.dataset.parentId;
   const avatarHtml = d.avatar
     ? `<img src="/uploads/${d.avatar}" class="avatar-sm" alt="">`
     : `<div class="avatar-sm avatar-placeholder" style="font-size:14px">${d.username[0].toUpperCase()}</div>`;
   const verifiedBadge = d.is_verified ? '<span class="verify-badge">✓</span>' : '';
+  let container = document.getElementById('comments-list');
+  if (d.parent_id) {
+    const parentEl = document.getElementById('comment-' + d.parent_id);
+    if (parentEl) {
+      container = parentEl.querySelector('.comment-replies') || parentEl;
+    }
+  }
   const html = `
-    <div class="comment" id="comment-${d.id}">
+    <div class="comment ${d.parent_id ? 'reply-comment' : ''}" id="comment-${d.id}">
       <a href="/channel/${d.commenter_id}">${avatarHtml}</a>
       <div class="comment-body">
         <div>
@@ -491,11 +573,14 @@ async function postComment(uuid) {
         <div class="comment-actions">
           <button class="comment-vote-btn" onclick="voteComment(${d.id},1,this)">👍 <span class="vote-count">0</span></button>
           <button class="comment-vote-btn" onclick="voteComment(${d.id},-1,this)">👎 <span class="vote-count">0</span></button>
+          <button class="comment-reply-btn" onclick="startReply(${d.parent_id || d.id}, ${JSON.stringify(d.username)})">Reply</button>
+          <button class="comment-delete-btn" onclick="openDeleteCommentModal(${d.id}, this)">Delete</button>
           <button class="report-btn" style="font-size:12px;padding:2px 8px" onclick="openReportModal('comment',${d.id})">🚩</button>
         </div>
+        ${d.parent_id ? '' : '<div class="comment-replies"></div>'}
       </div>
     </div>`;
-  document.getElementById('comments-list').insertAdjacentHTML('afterbegin', html);
+  container.insertAdjacentHTML(d.parent_id ? 'beforeend' : 'afterbegin', html);
 }
 
 // ── Copy link ─────────────────────────────────────────────────────────────────
@@ -539,6 +624,31 @@ function toggleKbdHints() {
   panel.classList.toggle('visible', kbdVisible);
 }
 
+// Simple @mention highlighting in comment text
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.comment-text').forEach(el => {
+    const text = el.textContent;
+    const html = text.replace(/@([A-Za-z0-9_]+)/g, (m, user) =>
+      `<a href="/u/${user}" class="mention">@${user}</a>`);
+    el.innerHTML = html;
+  });
+});
+
+let deleteCommentId = null;
+let deleteCommentElement = null;
+
+function openDeleteCommentModal(commentId, btn) {
+  deleteCommentId = commentId;
+  deleteCommentElement = btn.closest('.comment');
+  document.getElementById('delete-comment-modal').style.display = 'flex';
+}
+
+function closeDeleteCommentModal() {
+  document.getElementById('delete-comment-modal').style.display = 'none';
+  deleteCommentId = null;
+  deleteCommentElement = null;
+}
+
 async function voteComment(commentId, vote, btn) {
   const r = await fetch(`/api/comment-vote/${commentId}`, {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -553,6 +663,37 @@ async function voteComment(commentId, vote, btn) {
   downBtn.classList.toggle('voted-down', d.user_vote===-1);
   upBtn.querySelector('.vote-count').textContent   = d.likes;
   downBtn.querySelector('.vote-count').textContent = d.dislikes;
+}
+
+function startReply(parentId, username) {
+  const input = document.getElementById('comment-input');
+  input.dataset.parentId = parentId;
+  input.value = '@' + username + ' ';
+  input.focus();
+  autoResize(input);
+}
+
+async function togglePin(commentId, btn) {
+  const r = await fetch(`/api/comment-pin/${commentId}`, {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  if (r.status === 401) { location = '/login'; return; }
+  const d = await r.json();
+  if (!r.ok) { showToast(d.error || 'Could not update pin.'); return; }
+  // Simplest: reload to refresh ordering and badges
+  location.reload();
+}
+
+async function confirmDeleteComment() {
+  if (!deleteCommentId) { closeDeleteCommentModal(); return; }
+  const r = await fetch(`/api/comment-delete/${deleteCommentId}`, {
+    method:'POST', headers:{'Content-Type':'application/json'}
+  });
+  if (r.status === 401) { location = '/login'; return; }
+  const d = await r.json();
+  if (!r.ok) { showToast(d.error || 'Could not delete comment.'); return; }
+  if (deleteCommentElement) deleteCommentElement.remove();
+  closeDeleteCommentModal();
 }
 </script>
 {% endblock %}

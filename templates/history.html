@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}History - FlaskTube{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+  <h2 class="page-title" style="margin:0">History</h2>
+  {% if items %}
+  <form action="{{ url_for('clear_history') }}" method="post" style="margin:0">
+    <button class="text-btn" type="submit">Clear all</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if items %}
+<div class="video-grid" style="margin-top:14px">
+  {% for v in items %}
+  <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+    <div class="video-thumb">
+      {% if v.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+      {% else %}
+        <div class="thumb-placeholder">
+          <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      {% endif %}
+    </div>
+    <div class="video-info">
+      <div class="video-title">{{ v.title }}</div>
+      <div class="video-meta">
+        {{ v.channel_name or v.username }}
+        {% if v.is_verified %}<span class="verify-badge">✓</span>{% endif %}
+      </div>
+      <div class="video-meta">{{ fmt_views(v.views) }} views · Watched {{ time_ago(v.watched_at) }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <svg width="80" height="80" viewBox="0 0 24 24" fill="#aaa"><path d="M13 3a9 9 0 1 0 8.95 10H20a7 7 0 1 1-2.05-4.95L15 11h7V4l-2.24 2.24A8.96 8.96 0 0 0 13 3zm-1 5h2v6l5 3-1 1.73-6-3.73V8z"/></svg>
+  <p>No watch history yet.</p>
+  <p>Start watching videos and they’ll show up here.</p>
+  <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
+</div>
+{% endif %}
+{% endblock %}

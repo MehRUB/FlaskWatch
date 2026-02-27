@@ -303,6 +303,7 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
   width: 100%; background: none; border: none;
   border-bottom: 1px solid var(--border); color: var(--text);
   font-size: 14px; padding: 8px 0; outline: none; font-family: inherit;
+  resize: none;
 }
 .comment-input:focus { border-bottom-color: var(--text); }
 .comment-submit {
@@ -320,6 +321,58 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
 .comment-actions { display: flex; gap: 8px; margin-top: 4px; }
 .login-to-comment { font-size: 14px; color: var(--text2); padding: 12px 0; margin-bottom: 16px; }
 .login-to-comment a { color: var(--blue); }
+
+/* Reply / pin buttons */
+.comment-reply-btn,
+.comment-pin-btn {
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background .15s, color .15s, transform .08s;
+}
+.comment-reply-btn::before {
+  content: "↩";
+  font-size: 12px;
+}
+.comment-pin-btn::before {
+  content: "📌";
+  font-size: 12px;
+}
+.comment-reply-btn:hover,
+.comment-pin-btn:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.comment-pin-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.comment-pinned .comment-body {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+}
+
+.comment-delete-btn {
+  background: none;
+  border: none;
+  color: #ff7676;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.comment-delete-btn:hover {
+  background: rgba(255, 76, 76, 0.12);
+  color: #ffb3b3;
+}
 
 /* ── Watch Sidebar ────────────────────────────────────────── */
 .watch-sidebar { width: 402px; flex-shrink: 0; }
@@ -798,6 +851,19 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
 }
 .studio-stat-label {
   font-size: 13px;
+  color: var(--text2);
+  margin-top: 2px;
+}
+.studio-sparkline-wrap {
+  margin-top: 6px;
+}
+.studio-sparkline-wrap svg {
+  width: 100%;
+  height: 32px;
+  display: block;
+}
+.studio-sparkline-label {
+  font-size: 11px;
   color: var(--text2);
   margin-top: 2px;
 }

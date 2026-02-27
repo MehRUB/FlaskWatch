@@ -13,6 +13,22 @@
       <textarea name="description" class="form-input" rows="4" placeholder="Describe your video..."></textarea>
     </div>
     <div class="form-group">
+      <label>Visibility</label>
+      <select name="visibility" class="form-input">
+        <option value="public">Public</option>
+        <option value="unlisted">Unlisted</option>
+        <option value="private">Private (draft)</option>
+        <option value="scheduled">Scheduled</option>
+      </select>
+      <div class="hint" style="margin-top:4px;font-size:12px">
+        Private videos are only visible to you. Scheduled videos will go public at the time below.
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Schedule publish (optional)</label>
+      <input type="datetime-local" name="scheduled_at" class="form-input">
+    </div>
+    <div class="form-group">
       <label>Video File * <span class="hint">(MP4, WebM, OGG, MOV, AVI, MKV)</span></label>
       <div class="file-drop" id="video-drop">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="#aaa"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>

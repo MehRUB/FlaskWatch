@@ -19,6 +19,24 @@
                 placeholder="Describe your video...">{{ video.description or '' }}</textarea>
     </div>
     <div class="form-group">
+      <label>Visibility</label>
+      <select name="visibility" class="form-input">
+        {% set vis = video.visibility or 'public' %}
+        <option value="public"   {% if vis=='public' %}selected{% endif %}>Public</option>
+        <option value="unlisted" {% if vis=='unlisted' %}selected{% endif %}>Unlisted</option>
+        <option value="private"  {% if vis=='private' %}selected{% endif %}>Private (draft)</option>
+        <option value="scheduled" {% if vis=='scheduled' %}selected{% endif %}>Scheduled</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Schedule publish</label>
+      <input type="datetime-local" name="scheduled_at" class="form-input"
+             value="{{ (video.scheduled_at.replace(' ', 'T') if video.scheduled_at) or '' }}">
+      <div class="hint" style="margin-top:4px;font-size:12px">
+        Used when visibility is set to Scheduled.
+      </div>
+    </div>
+    <div class="form-group">
       <label>Thumbnail <span class="hint">(optional — replace current thumbnail)</span></label>
       {% if video.thumbnail %}
       <div style="margin-bottom:12px">

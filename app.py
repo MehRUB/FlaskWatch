@@ -33,6 +33,7 @@ GOOGLE_VISION_KEY = os.environ.get('GOOGLE_VISION_KEY', '')
 # Add any email here to give them admin access
 ADMIN_EMAILS = {
     'mehdiprodmus@gmail.com',
+    'arushdas853@gmail.com'
     # 'another@gmail.com',   ← just uncomment and add more
 }
 
@@ -78,6 +79,8 @@ def init_db():
             thumbnail     TEXT    DEFAULT NULL,
             views         INTEGER DEFAULT 0,
             is_removed    INTEGER DEFAULT 0,
+            visibility    TEXT    DEFAULT 'public',   -- public, unlisted, private, scheduled
+            scheduled_at  TEXT    DEFAULT NULL,
             created       TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS likes (
@@ -96,18 +99,27 @@ def init_db():
             user_id    INTEGER NOT NULL REFERENCES users(id),
             video_id   INTEGER NOT NULL REFERENCES videos(id),
             body       TEXT    NOT NULL,
+            parent_id  INTEGER REFERENCES comments(id),
+            is_pinned  INTEGER DEFAULT 0,
             is_removed INTEGER DEFAULT 0,
             created    TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS subscriptions (
             subscriber_id INTEGER NOT NULL REFERENCES users(id),
             channel_id    INTEGER NOT NULL REFERENCES users(id),
+            created       TEXT    DEFAULT (datetime('now')),
             PRIMARY KEY (subscriber_id, channel_id)
         );
         CREATE TABLE IF NOT EXISTS saved_videos (
             user_id  INTEGER NOT NULL REFERENCES users(id),
             video_id INTEGER NOT NULL REFERENCES videos(id),
             saved_at TEXT    DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, video_id)
+        );
+        CREATE TABLE IF NOT EXISTS watch_history (
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            video_id   INTEGER NOT NULL REFERENCES videos(id),
+            watched_at TEXT    DEFAULT (datetime('now')),
             PRIMARY KEY (user_id, video_id)
         );
         CREATE TABLE IF NOT EXISTS reports (
@@ -126,7 +138,12 @@ def init_db():
         ('users',         'channel_links', "TEXT DEFAULT ''"),
         ('users',         'is_verified',   'INTEGER DEFAULT 0'),
         ('videos',        'is_removed',    'INTEGER DEFAULT 0'),
+        ('videos',        'visibility',    "TEXT DEFAULT 'public'"),
+        ('videos',        'scheduled_at',  'TEXT DEFAULT NULL'),
+        ('comments',      'parent_id',     'INTEGER REFERENCES comments(id)'),
+        ('comments',      'is_pinned',     'INTEGER DEFAULT 0'),
         ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
+        ('subscriptions', 'created',       'TEXT DEFAULT (datetime(''now''))'),
     ]
     for table, col, defn in migrations:
         try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
@@ -395,12 +412,13 @@ def api_videos():
     offset = (page - 1) * limit
     q      = request.args.get('q', '').strip()
     db     = get_db()
+    base_where = 'v.is_removed=0 AND (v.visibility="public" OR (v.visibility="scheduled" AND v.scheduled_at <= datetime("now")))'
     if q:
         rows = db.execute('''
             SELECT v.*, u.username, u.avatar, u.channel_name, u.email, u.is_verified,
                    (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
             FROM videos v JOIN users u ON v.user_id=u.id
-            WHERE v.is_removed=0 AND (v.title LIKE ? OR v.description LIKE ?)
+            WHERE ''' + base_where + ''' AND (v.title LIKE ? OR v.description LIKE ?)
             ORDER BY v.created DESC LIMIT ? OFFSET ?
         ''', (f'%{q}%', f'%{q}%', limit, offset)).fetchall()
     else:
@@ -408,7 +426,7 @@ def api_videos():
             SELECT v.*, u.username, u.avatar, u.channel_name, u.email, u.is_verified,
                    (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
             FROM videos v JOIN users u ON v.user_id=u.id
-            WHERE v.is_removed=0
+            WHERE ''' + base_where + '''
             ORDER BY v.created DESC LIMIT ? OFFSET ?
         ''', (limit, offset)).fetchall()
     videos = [{
@@ -434,6 +452,8 @@ def upload():
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
         desc  = request.form.get('description', '').strip()
+        visibility = request.form.get('visibility', 'public')
+        scheduled_at_raw = request.form.get('scheduled_at', '').strip()
         video = request.files.get('video')
         thumb = request.files.get('thumbnail')
         if not title or not video or not video.filename:
@@ -462,10 +482,25 @@ def upload():
                 flash('⚠️ Your video was rejected — it appears to contain inappropriate content.', 'error')
                 return redirect(url_for('upload'))
         vid_uuid = uuid.uuid4().hex
+        # Normalize scheduling: only allow scheduled when a future datetime is provided
+        if visibility == 'scheduled' and scheduled_at_raw:
+            scheduled_at = scheduled_at_raw
+        else:
+            scheduled_at = None
+            if visibility == 'scheduled':
+                visibility = 'public'
         db = get_db()
-        db.execute('INSERT INTO videos (uuid, user_id, title, description, filename, thumbnail) VALUES (?,?,?,?,?,?)',
-                   (vid_uuid, session['user_id'], title, desc, vid_filename, thumb_filename))
+        db.execute('''
+            INSERT INTO videos (uuid, user_id, title, description, filename, thumbnail, visibility, scheduled_at)
+            VALUES (?,?,?,?,?,?,?,?)
+        ''', (vid_uuid, session['user_id'], title, desc, vid_filename, thumb_filename, visibility, scheduled_at))
         db.commit()
+        if visibility == 'private':
+            flash('Video saved as private draft.', 'success')
+            return redirect(url_for('studio'))
+        if visibility == 'scheduled':
+            flash('Video scheduled!', 'success')
+            return redirect(url_for('studio'))
         flash('Video uploaded!', 'success')
         return redirect(url_for('watch', vid_uuid=vid_uuid))
     return render_template('upload.html')
@@ -487,16 +522,43 @@ def watch(vid_uuid):
     if not video:
         flash('Video not found or has been removed.', 'error')
         return redirect(url_for('index'))
-    db.execute('UPDATE videos SET views=views+1 WHERE uuid=?', (vid_uuid,))
-    db.commit()
-
+    # Enforce visibility: owner and admins can see their own private/unlisted videos
     uid = session.get('user_id')
+    if video['visibility'] == 'private' and not (uid and (uid == video['user_id'] or is_admin())):
+        flash('This video is private.', 'error')
+        return redirect(url_for('index'))
+    if video['visibility'] == 'scheduled' and not (uid and (uid == video['user_id'] or is_admin())):
+        # Only show to public after scheduled_at
+        if not video['scheduled_at'] or video['scheduled_at'] > datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'):
+            flash('This video is not yet available.', 'error')
+            return redirect(url_for('index'))
+    db.execute('UPDATE videos SET views=views+1 WHERE uuid=?', (vid_uuid,))
+    if uid:
+        db.execute('''
+            INSERT INTO watch_history (user_id, video_id, watched_at)
+            VALUES (?,?,datetime('now'))
+            ON CONFLICT(user_id, video_id) DO UPDATE SET watched_at=datetime('now')
+        ''', (uid, video['id']))
+        # Keep only the most recent 200 items per user
+        db.execute('''
+            DELETE FROM watch_history
+            WHERE user_id=?
+              AND video_id NOT IN (
+                  SELECT video_id FROM watch_history
+                  WHERE user_id=?
+                  ORDER BY watched_at DESC
+                  LIMIT 200
+              )
+        ''', (uid, uid))
+
+    db.commit()
     comments = db.execute('''
         SELECT c.*, u.username, u.avatar, u.id AS commenter_id, u.is_verified AS commenter_verified,
                (SELECT COUNT(*) FROM comment_votes WHERE comment_id=c.id AND vote=1)  AS likes,
                (SELECT COUNT(*) FROM comment_votes WHERE comment_id=c.id AND vote=-1) AS dislikes
         FROM comments c JOIN users u ON c.user_id=u.id
-        WHERE c.video_id=? AND c.is_removed=0 ORDER BY c.created DESC
+        WHERE c.video_id=? AND c.is_removed=0
+        ORDER BY c.is_pinned DESC, c.created DESC
     ''', (video['id'],)).fetchall()
 
     # Get current user's votes on comments
@@ -561,16 +623,69 @@ def add_comment(vid_uuid):
     video = db.execute('SELECT id FROM videos WHERE uuid=? AND is_removed=0', (vid_uuid,)).fetchone()
     if not video: return jsonify({'error': 'Not found'}), 404
     body = request.json.get('body', '').strip()
+    parent_id = request.json.get('parent_id')
     if not body: return jsonify({'error': 'Empty comment'}), 400
-    db.execute('INSERT INTO comments (user_id, video_id, body) VALUES (?,?,?)',
-               (session['user_id'], video['id'], body))
+    # Validate parent comment (for threaded replies)
+    if parent_id is not None:
+        parent = db.execute('SELECT id, video_id FROM comments WHERE id=? AND is_removed=0', (parent_id,)).fetchone()
+        if not parent or parent['video_id'] != video['id']:
+            return jsonify({'error': 'Invalid parent comment'}), 400
+    db.execute('INSERT INTO comments (user_id, video_id, body, parent_id) VALUES (?,?,?,?)',
+               (session['user_id'], video['id'], body, parent_id))
     db.commit()
     u = db.execute('SELECT username, avatar, is_verified FROM users WHERE id=?', (session['user_id'],)).fetchone()
     comment_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
     return jsonify({'id': comment_id, 'username': u['username'], 'avatar': u['avatar'],
                     'body': body, 'created': 'just now',
                     'is_verified': bool(u['is_verified']),
-                    'commenter_id': session['user_id']})
+                    'commenter_id': session['user_id'],
+                    'parent_id': parent_id, 'is_pinned': False})
+
+
+@app.route('/api/comment-pin/<int:comment_id>', methods=['POST'])
+@login_required
+def toggle_comment_pin(comment_id):
+    db  = get_db()
+    uid = session['user_id']
+    row = db.execute('''
+        SELECT c.id, c.video_id, c.is_pinned, v.user_id AS channel_owner
+        FROM comments c JOIN videos v ON c.video_id=v.id
+        WHERE c.id=? AND c.is_removed=0
+    ''', (comment_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Comment not found'}), 404
+    if not (uid == row['channel_owner'] or is_admin()):
+        return jsonify({'error': 'Not allowed'}), 403
+    # If pinning, unpin all others on this video first
+    if not row['is_pinned']:
+        db.execute('UPDATE comments SET is_pinned=0 WHERE video_id=?', (row['video_id'],))
+        db.execute('UPDATE comments SET is_pinned=1 WHERE id=?', (comment_id,))
+        pinned = True
+    else:
+        db.execute('UPDATE comments SET is_pinned=0 WHERE id=?', (comment_id,))
+        pinned = False
+    db.commit()
+    return jsonify({'pinned': pinned})
+
+@app.route('/api/comment-delete/<int:comment_id>', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    db  = get_db()
+    uid = session['user_id']
+    row = db.execute('''
+        SELECT c.id, c.user_id, c.video_id, v.user_id AS channel_owner
+        FROM comments c JOIN videos v ON c.video_id=v.id
+        WHERE c.id=? AND c.is_removed=0
+    ''', (comment_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Comment not found'}), 404
+    if not (uid == row['user_id'] or uid == row['channel_owner'] or is_admin()):
+        return jsonify({'error': 'Not allowed'}), 403
+    # Soft delete this comment and its direct replies
+    db.execute('UPDATE comments SET is_removed=1 WHERE id=? OR parent_id=?', (comment_id, comment_id))
+    db.commit()
+    return jsonify({'deleted': True})
+
 
 @app.route('/api/comment-vote/<int:comment_id>', methods=['POST'])
 @login_required
@@ -738,12 +853,21 @@ def channel(channel_id):
     if not owner:
         flash('Channel not found.', 'error')
         return redirect(url_for('index'))
+    uid      = session.get('user_id')
+    is_owner = (uid == channel_id)
     videos = db.execute('''
         SELECT v.*, (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
-        FROM videos v WHERE v.user_id=? AND v.is_removed=0 ORDER BY v.created DESC
-    ''', (channel_id,)).fetchall()
+        FROM videos v
+        WHERE v.user_id=?
+          AND v.is_removed=0
+          AND (
+            ? = 1
+            OR v.visibility IN ('public','unlisted')
+            OR (v.visibility='scheduled' AND v.scheduled_at <= datetime('now'))
+          )
+        ORDER BY v.created DESC
+    ''', (channel_id, 1 if is_owner or (uid and is_admin()) else 0)).fetchall()
     sub_count = db.execute('SELECT COUNT(*) FROM subscriptions WHERE channel_id=?', (channel_id,)).fetchone()[0]
-    uid      = session.get('user_id')
     subbed   = bool(uid and db.execute('SELECT 1 FROM subscriptions WHERE subscriber_id=? AND channel_id=?', (uid, channel_id)).fetchone())
     is_owner = (uid == channel_id)
     channel_is_admin = owner['email'] in ADMIN_EMAILS
@@ -751,6 +875,16 @@ def channel(channel_id):
                            sub_count=sub_count, subbed=subbed,
                            is_owner=is_owner, channel_is_admin=channel_is_admin,
                            ADMIN_EMAILS=ADMIN_EMAILS)
+
+
+@app.route('/u/<username>')
+def user_by_username(username):
+    db = get_db()
+    user = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
+    if not user:
+        flash('User not found.', 'error')
+        return redirect(url_for('index'))
+    return redirect(url_for('channel', channel_id=user['id']))
 
 @app.route('/channel/<int:channel_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -816,6 +950,8 @@ def edit_video(vid_uuid):
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
         desc  = request.form.get('description', '').strip()
+        visibility = request.form.get('visibility', video['visibility'] or 'public')
+        scheduled_at_raw = request.form.get('scheduled_at', '').strip()
         if not title:
             flash('Title is required.', 'error')
             return redirect(url_for('edit_video', vid_uuid=vid_uuid))
@@ -823,8 +959,17 @@ def edit_video(vid_uuid):
         thumb_filename = video['thumbnail']
         if thumb and thumb.filename and allowed_image(thumb.filename):
             thumb_filename = save_file(thumb, 'thumbnails')
-        db.execute('UPDATE videos SET title=?, description=?, thumbnail=? WHERE uuid=? AND user_id=?',
-                   (title, desc, thumb_filename, vid_uuid, uid))
+        if visibility == 'scheduled' and scheduled_at_raw:
+            scheduled_at = scheduled_at_raw
+        else:
+            scheduled_at = None
+            if visibility == 'scheduled':
+                visibility = 'public'
+        db.execute('''
+            UPDATE videos
+            SET title=?, description=?, thumbnail=?, visibility=?, scheduled_at=?
+            WHERE uuid=? AND user_id=?
+        ''', (title, desc, thumb_filename, visibility, scheduled_at, vid_uuid, uid))
         db.commit()
         flash('Video updated!', 'success')
         return redirect(url_for('studio'))
@@ -861,6 +1006,23 @@ def studio_stats():
                      'likes': r['likes'], 'created': r['created']} for r in rows])
 
 
+@app.route('/api/studio/subscribers')
+@login_required
+def studio_subscribers():
+    db  = get_db()
+    uid = session['user_id']
+    # New subscribers per day for the last 30 days
+    rows = db.execute('''
+        SELECT strftime('%Y-%m-%d', created) AS day, COUNT(*) AS count
+        FROM subscriptions
+        WHERE channel_id=?
+          AND created >= date('now','-30 day')
+        GROUP BY day
+        ORDER BY day
+    ''', (uid,)).fetchall()
+    return jsonify([{'day': r['day'], 'count': r['count']} for r in rows])
+
+
 # ─── Library ──────────────────────────────────────────────────────────────────
 
 @app.route('/library')
@@ -877,6 +1039,33 @@ def library():
         ORDER BY sv.saved_at DESC
     ''', (session['user_id'],)).fetchall()
     return render_template('library.html', saved=saved)
+
+
+# ─── Watch History ─────────────────────────────────────────────────────────────
+
+@app.route('/history')
+@login_required
+def history():
+    db = get_db()
+    items = db.execute('''
+        SELECT v.*, u.username, u.channel_name, u.is_verified, wh.watched_at,
+               (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
+        FROM watch_history wh
+        JOIN videos v ON wh.video_id=v.id
+        JOIN users u ON v.user_id=u.id
+        WHERE wh.user_id=? AND v.is_removed=0
+        ORDER BY wh.watched_at DESC
+    ''', (session['user_id'],)).fetchall()
+    return render_template('history.html', items=items)
+
+@app.route('/history/clear', methods=['POST'])
+@login_required
+def clear_history():
+    db = get_db()
+    db.execute('DELETE FROM watch_history WHERE user_id=?', (session['user_id'],))
+    db.commit()
+    flash('Watch history cleared.', 'success')
+    return redirect(url_for('history'))
 
 
 # ─── Boot ─────────────────────────────────────────────────────────────────────
