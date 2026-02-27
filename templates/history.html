@@ -1,44 +1,49 @@
 {% extends 'base.html' %}
 {% block title %}History - FlaskTube{% endblock %}
+
 {% block content %}
-<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-  <h2 class="page-title" style="margin:0">History</h2>
+<div class="history-header">
+  <h1 class="page-title" style="margin-bottom:0">Watch History</h1>
   {% if items %}
-  <form action="{{ url_for('clear_history') }}" method="post" style="margin:0">
-    <button class="text-btn" type="submit">Clear all</button>
+  <form action="{{ url_for('clear_history') }}" method="post" onsubmit="return confirm('Clear all watch history? This cannot be undone.');">
+    <button type="submit" class="clear-history-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      Clear all watch history
+    </button>
   </form>
   {% endif %}
 </div>
 
 {% if items %}
-<div class="video-grid" style="margin-top:14px">
-  {% for v in items %}
-  <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+<div class="video-grid">
+  {% for video in items %}
+  <a href="{{ url_for('watch', vid_uuid=video.uuid) }}" class="video-card">
     <div class="video-thumb">
-      {% if v.thumbnail %}
-        <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+      {% if video.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=video.thumbnail) }}" alt="" loading="lazy">
       {% else %}
         <div class="thumb-placeholder">
-          <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--text2)"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
         </div>
       {% endif %}
     </div>
     <div class="video-info">
-      <div class="video-title">{{ v.title }}</div>
+      <div class="video-title" title="{{ video.title }}">{{ video.title }}</div>
       <div class="video-meta">
-        {{ v.channel_name or v.username }}
-        {% if v.is_verified %}<span class="verify-badge">✓</span>{% endif %}
+        {{ video.channel_name or video.username }}
+        {% if video.is_verified %}<span class="verify-badge">✓</span>{% endif %}
       </div>
-      <div class="video-meta">{{ fmt_views(v.views) }} views · Watched {{ time_ago(v.watched_at) }}</div>
+      <div class="video-meta">
+        {{ fmt_views(video.views) }} views · {{ time_ago(video.watched_at) }}
+      </div>
     </div>
   </a>
   {% endfor %}
 </div>
 {% else %}
 <div class="empty-state">
-  <svg width="80" height="80" viewBox="0 0 24 24" fill="#aaa"><path d="M13 3a9 9 0 1 0 8.95 10H20a7 7 0 1 1-2.05-4.95L15 11h7V4l-2.24 2.24A8.96 8.96 0 0 0 13 3zm-1 5h2v6l5 3-1 1.73-6-3.73V8z"/></svg>
-  <p>No watch history yet.</p>
-  <p>Start watching videos and they’ll show up here.</p>
+  <svg width="64" height="64" viewBox="0 0 24 24" fill="var(--text2)"><path d="M13 3a9 9 0 1 0 8.95 10H20a7 7 0 1 1-2.05-4.95L15 11h7V4l-2.24 2.24A8.96 8.96 0 0 0 13 3zm-1 5h2v6l5 3-1 1.73-6-3.73V8z"/></svg>
+  <p>Watch history is empty.</p>
   <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
 </div>
 {% endif %}

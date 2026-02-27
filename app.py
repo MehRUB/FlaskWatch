@@ -2,6 +2,7 @@ import os
 import uuid
 import sqlite3
 import base64
+import random
 from datetime import datetime
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -132,6 +133,21 @@ def init_db():
             status      TEXT    DEFAULT 'pending',
             created     TEXT    DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS notifications (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            message    TEXT    NOT NULL,
+            link       TEXT    NOT NULL,
+            is_read    INTEGER DEFAULT 0,
+            created    TEXT    DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS community_posts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            body       TEXT    NOT NULL,
+            image      TEXT    DEFAULT NULL,
+            created    TEXT    DEFAULT (datetime('now'))
+        );
     ''')
     migrations = [
         ('users',         'banner',        'TEXT DEFAULT NULL'),
@@ -145,6 +161,7 @@ def init_db():
         ('comments',      'is_pinned',     'INTEGER DEFAULT 0'),
         ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
         ('subscriptions', 'created',       'TEXT DEFAULT (datetime(''now''))'),
+        ('videos',        'tags',          "TEXT DEFAULT ''"),
     ]
     for table, col, defn in migrations:
         try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
@@ -250,6 +267,14 @@ def extract_video_thumbnail(video_path, output_path):
         return r.returncode == 0 and os.path.exists(output_path)
     except: return False
 
+
+def notify_subscribers(channel_id, message, link):
+    db = get_db()
+    subs = db.execute('SELECT subscriber_id FROM subscriptions WHERE channel_id=?', (channel_id,)).fetchall()
+    if not subs: return
+    data = [(s['subscriber_id'], message, link) for s in subs]
+    db.executemany('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)', data)
+    db.commit()
 
 # ─── File serving ─────────────────────────────────────────────────────────────
 
@@ -406,6 +431,23 @@ def delete_account():
 def index():
     return render_template('index.html')
 
+
+@app.route('/random')
+def random_video():
+    """Redirect to a random public/available video."""
+    db = get_db()
+    row = db.execute('''
+        SELECT uuid
+        FROM videos
+        WHERE is_removed=0
+          AND (visibility="public" OR (visibility="scheduled" AND scheduled_at <= datetime("now")))
+        ORDER BY RANDOM() LIMIT 1
+    ''').fetchone()
+    if not row:
+        flash('No videos available yet.', 'info')
+        return redirect(url_for('index'))
+    return redirect(url_for('watch', vid_uuid=row['uuid']))
+
 @app.route('/api/videos')
 def api_videos():
     page   = int(request.args.get('page', 1))
@@ -423,13 +465,18 @@ def api_videos():
             ORDER BY v.created DESC LIMIT ? OFFSET ?
         ''', (f'%{q}%', f'%{q}%', limit, offset)).fetchall()
     else:
-        rows = db.execute('''
+        # Random feed; if there are fewer than "limit" unique videos,
+        # duplicate some entries so the grid still fills (useful when only 1 video exists).
+        base_rows = db.execute('''
             SELECT v.*, u.username, u.avatar, u.channel_name, u.email, u.is_verified,
                    (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
             FROM videos v JOIN users u ON v.user_id=u.id
             WHERE ''' + base_where + '''
-            ORDER BY v.created DESC LIMIT ? OFFSET ?
-        ''', (limit, offset)).fetchall()
+        ''').fetchall()
+        if not base_rows:
+            rows = []
+        else:
+            rows = [random.choice(base_rows) for _ in range(limit)]
     videos = [{
         'uuid':       r['uuid'],      'title':      r['title'],
         'thumbnail':  r['thumbnail'], 'views':      fmt_views(r['views']),
@@ -444,6 +491,22 @@ def api_videos():
 def search():
     return render_template('index.html', search_query=request.args.get('q', ''))
 
+@app.route('/trending')
+def trending():
+    db = get_db()
+    # Simple trending: videos with most views (or you could join watch_history for recent views)
+    # Reusing subscriptions.html as it renders a list of videos
+    videos = db.execute('''
+        SELECT v.*, u.username, u.channel_name, u.avatar,
+               (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
+        FROM videos v
+        JOIN users u ON v.user_id=u.id
+        WHERE v.is_removed=0 AND v.visibility='public'
+        ORDER BY v.views DESC
+        LIMIT 50
+    ''').fetchall()
+    return render_template('subscriptions.html', videos=videos)
+
 
 # ─── Upload ───────────────────────────────────────────────────────────────────
 
@@ -454,6 +517,7 @@ def upload():
         title = request.form.get('title', '').strip()
         desc  = request.form.get('description', '').strip()
         visibility = request.form.get('visibility', 'public')
+        tags = request.form.get('tags', '').strip()
         scheduled_at_raw = request.form.get('scheduled_at', '').strip()
         video = request.files.get('video')
         thumb = request.files.get('thumbnail')
@@ -491,10 +555,10 @@ def upload():
             if visibility == 'scheduled':
                 visibility = 'public'
         db = get_db()
-        db.execute('''
-            INSERT INTO videos (uuid, user_id, title, description, filename, thumbnail, visibility, scheduled_at)
-            VALUES (?,?,?,?,?,?,?,?)
-        ''', (vid_uuid, session['user_id'], title, desc, vid_filename, thumb_filename, visibility, scheduled_at))
+        cur = db.execute('''
+            INSERT INTO videos (uuid, user_id, title, description, filename, thumbnail, visibility, scheduled_at, tags)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        ''', (vid_uuid, session['user_id'], title, desc, vid_filename, thumb_filename, visibility, scheduled_at, tags))
         db.commit()
         if visibility == 'private':
             flash('Video saved as private draft.', 'success')
@@ -502,6 +566,10 @@ def upload():
         if visibility == 'scheduled':
             flash('Video scheduled!', 'success')
             return redirect(url_for('studio'))
+        
+        if visibility == 'public':
+            user = current_user()
+            notify_subscribers(user['id'], f"{user['channel_name'] or user['username']} uploaded: {title}", url_for('watch', vid_uuid=vid_uuid))
         flash('Video uploaded!', 'success')
         return redirect(url_for('watch', vid_uuid=vid_uuid))
     return render_template('upload.html')
@@ -571,11 +639,18 @@ def watch(vid_uuid):
     liked  = bool(uid and db.execute('SELECT 1 FROM likes WHERE user_id=? AND video_id=?', (uid, video['id'])).fetchone())
     subbed = bool(uid and db.execute('SELECT 1 FROM subscriptions WHERE subscriber_id=? AND channel_id=?', (uid, video['channel_id'])).fetchone())
     saved  = bool(uid and db.execute('SELECT 1 FROM saved_videos WHERE user_id=? AND video_id=?', (uid, video['id'])).fetchone())
+    
+    # Related videos based on tags or title
+    tags = [t.strip() for t in (video['tags'] or '').split(',') if t.strip()]
+    tag_pattern = '%' + '%'.join(tags[:3]) + '%' if tags else ''
+    
     related = db.execute('''
         SELECT v.uuid, v.title, v.thumbnail, v.views, u.username, u.channel_name, u.is_verified
         FROM videos v JOIN users u ON v.user_id=u.id
-        WHERE v.uuid != ? AND v.is_removed=0 ORDER BY RANDOM() LIMIT 10
-    ''', (vid_uuid,)).fetchall()
+        WHERE v.uuid != ? AND v.is_removed=0
+        ORDER BY (CASE WHEN v.tags LIKE ? THEN 1 ELSE 0 END) DESC, RANDOM()
+        LIMIT 10
+    ''', (vid_uuid, tag_pattern)).fetchall()
     return render_template('watch.html', video=video, comments=comments,
                            liked=liked, subbed=subbed, saved=saved,
                            related=related, user_votes=user_votes,
@@ -734,6 +809,22 @@ def toggle_subscribe(channel_id):
     return jsonify({'subbed': subbed, 'count': count})
 
 
+# ─── Notifications ────────────────────────────────────────────────────────────
+
+@app.route('/api/notifications')
+@login_required
+def get_notifications():
+    db = get_db()
+    notifs = db.execute('SELECT * FROM notifications WHERE user_id=? ORDER BY created DESC LIMIT 20', (session['user_id'],)).fetchall()
+    return jsonify([dict(n) for n in notifs])
+
+@app.route('/api/notifications/read', methods=['POST'])
+@login_required
+def read_notifications():
+    get_db().execute('UPDATE notifications SET is_read=1 WHERE user_id=?', (session['user_id'],))
+    get_db().commit()
+    return jsonify({'ok': True})
+
 # ─── Reporting ────────────────────────────────────────────────────────────────
 
 @app.route('/api/report', methods=['POST'])
@@ -773,6 +864,12 @@ def admin():
         LEFT JOIN users    cu ON c.user_id     = cu.id
         ORDER BY r.created DESC
     ''').fetchall()
+    
+    # User management list
+    users = db.execute('''
+        SELECT * FROM users ORDER BY created DESC LIMIT 100
+    ''').fetchall()
+    
     stats = {
         'total_users':     db.execute('SELECT COUNT(*) FROM users').fetchone()[0],
         'total_videos':    db.execute('SELECT COUNT(*) FROM videos WHERE is_removed=0').fetchone()[0],
@@ -781,7 +878,7 @@ def admin():
         'ai_enabled':      bool(GOOGLE_VISION_KEY),
         'email_enabled':   bool(GMAIL_USER),
     }
-    return render_template('admin.html', reports=reports, stats=stats)
+    return render_template('admin.html', reports=reports, stats=stats, users=users)
 
 @app.route('/admin/remove-video/<vid_uuid>', methods=['POST'])
 @admin_required
@@ -952,6 +1049,7 @@ def edit_video(vid_uuid):
         title = request.form.get('title', '').strip()
         desc  = request.form.get('description', '').strip()
         visibility = request.form.get('visibility', video['visibility'] or 'public')
+        tags = request.form.get('tags', '').strip()
         scheduled_at_raw = request.form.get('scheduled_at', '').strip()
         if not title:
             flash('Title is required.', 'error')
@@ -968,9 +1066,9 @@ def edit_video(vid_uuid):
                 visibility = 'public'
         db.execute('''
             UPDATE videos
-            SET title=?, description=?, thumbnail=?, visibility=?, scheduled_at=?
+            SET title=?, description=?, thumbnail=?, visibility=?, scheduled_at=?, tags=?
             WHERE uuid=? AND user_id=?
-        ''', (title, desc, thumb_filename, visibility, scheduled_at, vid_uuid, uid))
+        ''', (title, desc, thumb_filename, visibility, scheduled_at, tags, vid_uuid, uid))
         db.commit()
         flash('Video updated!', 'success')
         return redirect(url_for('studio'))
@@ -1040,6 +1138,26 @@ def library():
         ORDER BY sv.saved_at DESC
     ''', (session['user_id'],)).fetchall()
     return render_template('library.html', saved=saved)
+
+
+# ─── Subscriptions Feed ───────────────────────────────────────────────────────
+
+@app.route('/subscriptions')
+@login_required
+def subscriptions_feed():
+    db  = get_db()
+    uid = session['user_id']
+    videos = db.execute('''
+        SELECT v.*, u.username, u.channel_name,
+               (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
+        FROM subscriptions s
+        JOIN videos v ON s.channel_id = v.user_id
+        JOIN users  u ON v.user_id = u.id
+        WHERE s.subscriber_id=? AND v.is_removed=0
+          AND (v.visibility="public" OR (v.visibility="scheduled" AND v.scheduled_at <= datetime("now")))
+        ORDER BY v.created DESC
+    ''', (uid,)).fetchall()
+    return render_template('subscriptions.html', videos=videos)
 
 
 # ─── Watch History ─────────────────────────────────────────────────────────────

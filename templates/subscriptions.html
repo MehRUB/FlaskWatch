@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Subscriptions - FlaskTube{% endblock %}
+{% block content %}
+<h2 class="page-title">Subscriptions</h2>
+
+{% if videos %}
+<div class="video-grid">
+  {% for v in videos %}
+  <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+    <div class="video-thumb">
+      {% if v.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+      {% else %}
+        <div class="thumb-placeholder">
+          <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      {% endif %}
+    </div>
+    <div class="video-info">
+      <div class="video-title">{{ v.title }}</div>
+      <div class="video-meta">{{ v.channel_name or v.username }}</div>
+      <div class="video-meta">{{ fmt_views(v.views) }} views · {{ time_ago(v.created) }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <svg width="80" height="80" viewBox="0 0 24 24" fill="#aaa"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+  <p>No videos from channels you’re subscribed to yet.</p>
+  <p>Subscribe to channels and their latest uploads will appear here.</p>
+  <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
+</div>
+{% endif %}
+{% endblock %}

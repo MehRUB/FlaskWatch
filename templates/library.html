@@ -1,7 +1,13 @@
 {% extends 'base.html' %}
-{% block title %}Libary - FlaskTube{% endblock %}
+{% block title %}Library - FlaskTube{% endblock %}
 {% block content %}
-<h2 class="page-title">Libary</h2>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+  <h2 class="page-title" style="margin:0">Library</h2>
+  <button type="button" class="library-new-btn" onclick="openPlaylistModal()">
+    <span class="library-new-icon">＋</span>
+    <span>New playlist</span>
+  </button>
+</div>
 
 {% if saved %}
 <div class="video-grid">
@@ -32,4 +38,54 @@
   <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
 </div>
 {% endif %}
+<!-- Create Playlist Modal -->
+<div class="modal-backdrop" id="playlist-modal">
+  <div class="modal">
+    <button class="modal-close" type="button" onclick="closePlaylistModal()">✕</button>
+    <h3>Create new playlist</h3>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
+      <div>
+        <label for="playlist-name" style="font-size:13px;color:var(--text2);display:block;margin-bottom:4px">Name</label>
+        <input id="playlist-name" class="form-input" type="text" placeholder="My playlist">
+      </div>
+      <div>
+        <label for="playlist-visibility" style="font-size:13px;color:var(--text2);display:block;margin-bottom:4px">Visibility</label>
+        <select id="playlist-visibility" class="form-input">
+          <option value="public">Public</option>
+          <option value="unlisted">Unlisted</option>
+          <option value="private">Private</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn modal-btn-cancel" onclick="closePlaylistModal()">Cancel</button>
+      <button type="button" class="modal-btn modal-btn-submit" onclick="submitPlaylist()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openPlaylistModal() {
+  document.getElementById('playlist-modal').style.display = 'flex';
+  const input = document.getElementById('playlist-name');
+  if (input) {
+    input.value = '';
+    input.focus();
+  }
+}
+function closePlaylistModal() {
+  document.getElementById('playlist-modal').style.display = 'none';
+}
+function submitPlaylist() {
+  const name = document.getElementById('playlist-name').value.trim();
+  const vis  = document.getElementById('playlist-visibility').value;
+  if (!name) {
+    showToast('Please enter a playlist name.');
+    return;
+  }
+  // Placeholder behavior until backend is implemented.
+  closePlaylistModal();
+  showToast(`Playlist "${name}" (${vis}) will be created soon.`);
+}
+</script>
 {% endblock %}

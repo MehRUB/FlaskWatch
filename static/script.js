@@ -106,6 +106,52 @@ function showToast(msg) {
   }, 3500);
 }
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+async function toggleNotifs() {
+  const dd = document.getElementById('notif-dropdown');
+  const badge = document.getElementById('notif-badge');
+  
+  if (dd.classList.contains('show')) {
+    dd.classList.remove('show');
+    return;
+  }
+  
+  // Load
+  const r = await fetch('/api/notifications');
+  if (r.status === 401) { window.location = '/login'; return; }
+  const data = await r.json();
+  
+  if (!data.length) {
+    dd.innerHTML = '<div class="notif-empty">No notifications</div>';
+  } else {
+    dd.innerHTML = data.map(n => `
+      <a href="${n.link}" class="notif-item ${n.is_read ? '' : 'unread'}">
+        <div>${n.message}</div>
+        <span class="notif-time">${new Date(n.created + 'Z').toLocaleDateString()}</span>
+      </a>
+    `).join('');
+  }
+  
+  dd.classList.add('show');
+  
+  // Mark read
+  if (data.some(n => !n.is_read)) {
+    await fetch('/api/notifications/read', {method:'POST'});
+    badge.style.display = 'none';
+  }
+}
+
+// Check for unread on load
+document.addEventListener('DOMContentLoaded', async () => {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return; // Not logged in
+  const r = await fetch('/api/notifications');
+  if (r.ok) {
+    const data = await r.json();
+    if (data.some(n => !n.is_read)) badge.style.display = 'block';
+  }
+});
+
 // ── Theme ──────────────────────────────────────────────────────────────────────
 function toggleTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
