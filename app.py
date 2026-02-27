@@ -27,9 +27,9 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 
 # ── Config from environment variables ─────────────────────────────────────────
-RESEND_API_KEY     = os.environ.get('RESEND_API_KEY', '')
-MAIL_FROM          = os.environ.get('MAIL_FROM', 'FlaskTube <onboarding@resend.dev>')
-SITE_URL           = os.environ.get('SITE_URL', 'http://localhost:5000')
+GMAIL_USER  = os.environ.get('GMAIL_USER', '')
+GMAIL_PASS  = os.environ.get('GMAIL_PASS', '')
+SITE_URL    = os.environ.get('SITE_URL', 'http://localhost:5000')
 GOOGLE_VISION_KEY  = os.environ.get('GOOGLE_VISION_KEY', '')
 ADMIN_EMAIL        = 'mehdiprodmus@gmail.com'  # only this email gets admin
 
@@ -193,42 +193,51 @@ app.jinja_env.globals.update(
 )
 
 
-# ─── Email via Resend ─────────────────────────────────────────────────────────
+# ─── Email via Gmail SMTP ─────────────────────────────────────────────────────
 
 def send_verification_email(to_email, token):
-    """Send verification email. Returns True on success, False on failure."""
+    """Send verification email via Gmail. Returns True on success."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
     verify_url = f'{SITE_URL}/verify/{token}'
 
-    if not RESEND_API_KEY:
-        # Dev mode — print link to console so you can test locally
-        print(f'\n[DEV MODE] Verification link for {to_email}:\n{verify_url}\n')
-        return False  # signals dev mode to caller
+    if not GMAIL_USER or not GMAIL_PASS:
+        return False
 
     try:
-        import resend
-        resend.api_key = RESEND_API_KEY
-        resend.Emails.send({
-            'from':    MAIL_FROM,
-            'to':      [to_email],
-            'subject': 'Verify your FlaskTube account',
-            'html': f'''
-                <div style="font-family:sans-serif;max-width:500px;margin:40px auto;
-                            background:#181818;color:#f1f1f1;border-radius:12px;
-                            padding:32px;border:1px solid #3d3d3d">
-                    <h2 style="color:#ff0000;margin-top:0">🎬 FlaskTube</h2>
-                    <p style="font-size:16px">Thanks for signing up! One click to activate your account:</p>
-                    <a href="{verify_url}"
-                       style="display:inline-block;background:#ff0000;color:#fff;
-                              padding:14px 28px;border-radius:8px;text-decoration:none;
-                              font-weight:bold;font-size:16px;margin:16px 0">
-                        ✓ Verify my account
-                    </a>
-                    <p style="color:#aaa;font-size:12px;margin-top:24px">
-                        Link not working? Copy and paste:<br>
-                        <a href="{verify_url}" style="color:#3ea6ff">{verify_url}</a>
-                    </p>
-                </div>'''
-        })
+        html = f"""
+            <div style="font-family:sans-serif;max-width:500px;margin:40px auto;
+                        background:#181818;color:#f1f1f1;border-radius:12px;
+                        padding:32px;border:1px solid #3d3d3d">
+                <h2 style="color:#ff0000;margin-top:0">🎬 FlaskTube</h2>
+                <p style="font-size:16px">Thanks for signing up! One click to activate your account:</p>
+                <a href="{verify_url}"
+                   style="display:inline-block;background:#ff0000;color:#fff;
+                          padding:14px 28px;border-radius:8px;text-decoration:none;
+                          font-weight:bold;font-size:16px;margin:16px 0">
+                    ✓ Verify my account
+                </a>
+                <p style="color:#aaa;font-size:12px;margin-top:24px">
+                    Link not working? Copy and paste:<br>
+                    <a href="{verify_url}" style="color:#3ea6ff">{verify_url}</a>
+                </p>
+            </div>"""
+
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Verify your FlaskTube account'
+        msg['From']    = f'FlaskTube <{GMAIL_USER}>'
+        msg['To']      = to_email
+        msg.attach(MIMEText(html, 'html'))
+
+        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(GMAIL_USER, GMAIL_PASS)
+            smtp.sendmail(GMAIL_USER, to_email, msg.as_string())
+
+        print(f'[EMAIL SENT] to={to_email}')
         return True
     except Exception as e:
         print(f'[EMAIL ERROR] {e}')
@@ -658,7 +667,7 @@ def admin():
         'pending_reports': db.execute("SELECT COUNT(*) FROM reports WHERE status='pending'").fetchone()[0],
         'removed_videos':  db.execute('SELECT COUNT(*) FROM videos WHERE is_removed=1').fetchone()[0],
         'ai_enabled':      bool(GOOGLE_VISION_KEY),
-        'email_enabled':   bool(RESEND_API_KEY),
+        'email_enabled':   bool(GMAIL_USER),
     }
     return render_template('admin.html', reports=reports, stats=stats)
 
