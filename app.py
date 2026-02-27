@@ -203,21 +203,26 @@ def send_verification_email(to_email, token):
     gmail_pass = os.environ.get('GMAIL_PASS')
     site_url = os.environ.get('SITE_URL')
 
+    if not gmail_user or not gmail_pass:
+        print("[EMAIL ERROR] Env variables missing")
+        return False
+
     msg = MIMEText(f'Verify your account here: {site_url}/verify/{token}')
     msg['Subject'] = 'FlaskTube Verification'
     msg['From'] = gmail_user
     msg['To'] = to_email
 
     try:
-        # We use standard SMTP on port 2525
-        server = smtplib.SMTP('smtp.gmail.com', 2525, timeout=10)
-        server.starttls()  # Secure the connection
+        # Use a shorter timeout so your thread doesn't hang forever
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=5) 
+        server.starttls()
         server.login(gmail_user, gmail_pass)
         server.send_message(msg)
         server.quit()
         print(f'[EMAIL SENT] to {to_email}')
         return True
     except Exception as e:
+        # This is where you see the "Network is unreachable"
         print(f'[EMAIL ERROR] {e}')
         return False
 
