@@ -8,6 +8,7 @@ except ImportError:
 import sqlite3
 import secrets
 import base64
+import threading
 from datetime import datetime
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -231,7 +232,7 @@ def send_verification_email(to_email, token):
         msg['To']      = to_email
         msg.attach(MIMEText(html, 'html'))
 
-        with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as smtp:
             smtp.ehlo()
             smtp.starttls()
             smtp.login(GMAIL_USER, GMAIL_PASS)
@@ -342,13 +343,8 @@ def register():
         user = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
         session['user_id'] = user['id']
 
-        sent = send_verification_email(email, token)
-        if sent:
-            flash('Account created! Check your email to verify your account.', 'success')
-        else:
-            # Dev mode — account is still usable, just show a warning
-            flash('Account created! Verify your email to unlock uploads and comments.', 'info')
-
+        threading.Thread(target=send_verification_email, args=(email, token), daemon=True).start()
+        flash('Account created! Check your email to verify your account.', 'success')
         return redirect(url_for('index'))
     return render_template('register.html')
 
@@ -378,11 +374,8 @@ def resend_verification():
     token = secrets.token_urlsafe(32)
     db.execute('UPDATE users SET verify_token=? WHERE id=?', (token, user['id']))
     db.commit()
-    sent = send_verification_email(user['email'], token)
-    if sent:
-        flash('Verification email sent! Check your inbox.', 'success')
-    else:
-        flash('Verification email sent! Check your inbox (and spam folder).', 'success')
+    threading.Thread(target=send_verification_email, args=(user['email'], token), daemon=True).start()
+    flash('Verification email sent! Check your inbox (and spam folder).', 'success')
     return redirect(url_for('index'))
 
 
