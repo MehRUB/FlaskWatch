@@ -105,3 +105,17 @@ function showToast(msg) {
     setTimeout(() => t.remove(), 400);
   }, 3500);
 }
+
+// ── Theme ──────────────────────────────────────────────────────────────────────
+function toggleTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const newTheme = isDark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+}
+
+// Apply on load
+document.addEventListener('DOMContentLoaded', () => {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+});

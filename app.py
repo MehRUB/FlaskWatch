@@ -54,70 +54,48 @@ def close_db(e=None):
 
 def init_db():
     db = sqlite3.connect(DB_PATH)
+    # app.py -> init_db()
     db.executescript('''
-        CREATE TABLE IF NOT EXISTS users (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            username       TEXT    UNIQUE NOT NULL,
-            email          TEXT    UNIQUE NOT NULL,
-            password       TEXT    NOT NULL,
-            avatar         TEXT    DEFAULT NULL,
-            banner         TEXT    DEFAULT NULL,
-            bio            TEXT    DEFAULT '',
-            channel_name   TEXT    DEFAULT NULL,
-            channel_links  TEXT    DEFAULT '',
-            is_verified    INTEGER DEFAULT 0,
-            created        TEXT    DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS videos (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            uuid          TEXT    UNIQUE NOT NULL,
-            user_id       INTEGER NOT NULL REFERENCES users(id),
-            title         TEXT    NOT NULL,
-            description   TEXT    DEFAULT '',
-            filename      TEXT    NOT NULL,
-            thumbnail     TEXT    DEFAULT NULL,
-            views         INTEGER DEFAULT 0,
-            is_removed    INTEGER DEFAULT 0,
-            created       TEXT    DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS likes (
-            user_id  INTEGER NOT NULL REFERENCES users(id),
-            video_id INTEGER NOT NULL REFERENCES videos(id),
+        -- 1. Video Enhancements
+        ALTER TABLE videos ADD COLUMN visibility TEXT DEFAULT 'public'; -- public, private, unlisted, scheduled
+        ALTER TABLE videos ADD COLUMN scheduled_at TEXT DEFAULT NULL;
+        ALTER TABLE videos ADD COLUMN category TEXT DEFAULT 'General';
+    
+        -- 2. Watch History
+        CREATE TABLE IF NOT EXISTS watch_history (
+            user_id INTEGER REFERENCES users(id),
+            video_id INTEGER REFERENCES videos(id),
+            watched_at TEXT DEFAULT (datetime('now')),
             PRIMARY KEY (user_id, video_id)
         );
-        CREATE TABLE IF NOT EXISTS comment_votes (
-            user_id    INTEGER NOT NULL REFERENCES users(id),
-            comment_id INTEGER NOT NULL REFERENCES comments(id),
-            vote       INTEGER NOT NULL DEFAULT 1,
-            PRIMARY KEY (user_id, comment_id)
-        );
-        CREATE TABLE IF NOT EXISTS comments (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER NOT NULL REFERENCES users(id),
-            video_id   INTEGER NOT NULL REFERENCES videos(id),
-            body       TEXT    NOT NULL,
-            is_removed INTEGER DEFAULT 0,
-            created    TEXT    DEFAULT (datetime('now'))
-        );
+    
+        -- 3. Subscriptions & Notifications
         CREATE TABLE IF NOT EXISTS subscriptions (
-            subscriber_id INTEGER NOT NULL REFERENCES users(id),
-            channel_id    INTEGER NOT NULL REFERENCES users(id),
+            subscriber_id INTEGER REFERENCES users(id),
+            channel_id INTEGER REFERENCES users(id),
+            notify INTEGER DEFAULT 1,
             PRIMARY KEY (subscriber_id, channel_id)
         );
-        CREATE TABLE IF NOT EXISTS saved_videos (
-            user_id  INTEGER NOT NULL REFERENCES users(id),
-            video_id INTEGER NOT NULL REFERENCES videos(id),
-            saved_at TEXT    DEFAULT (datetime('now')),
-            PRIMARY KEY (user_id, video_id)
+    
+        -- 4. Pinned Comments & Threading
+        ALTER TABLE comments ADD COLUMN is_pinned INTEGER DEFAULT 0;
+        ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) DEFAULT NULL;
+    
+        -- 5. Community Posts
+        CREATE TABLE IF NOT EXISTS community_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
+            content TEXT NOT NULL,
+            image_path TEXT,
+            created TEXT DEFAULT (datetime('now'))
         );
-        CREATE TABLE IF NOT EXISTS reports (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            reporter_id INTEGER REFERENCES users(id),
-            video_id    INTEGER REFERENCES videos(id),
-            comment_id  INTEGER REFERENCES comments(id),
-            reason      TEXT    NOT NULL,
-            status      TEXT    DEFAULT 'pending',
-            created     TEXT    DEFAULT (datetime('now'))
+    
+        -- 6. Analytics Cache (Subscriber Growth)
+        CREATE TABLE IF NOT EXISTS subscriber_stats (
+            channel_id INTEGER REFERENCES users(id),
+            date TEXT DEFAULT (date('now')),
+            count INTEGER DEFAULT 0,
+            PRIMARY KEY (channel_id, date)
         );
     ''')
     migrations = [
