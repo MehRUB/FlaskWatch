@@ -18,8 +18,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'flasktube-dev-secret')
 
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-DB_PATH       = os.path.join(BASE_DIR, 'youtube.db')
+UPLOAD_FOLDER = '/app/data/uploads'
+DB_PATH       = '/app/data/youtube.db'
 
 ALLOWED_VIDEO = {'mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'}
 ALLOWED_IMAGE = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
