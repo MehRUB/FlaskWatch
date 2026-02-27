@@ -33,7 +33,8 @@ GOOGLE_VISION_KEY = os.environ.get('GOOGLE_VISION_KEY', '')
 # Add any email here to give them admin access
 ADMIN_EMAILS = {
     'mehdiprodmus@gmail.com',
-    'arushdas853@gmail.com'
+    'arushdas853@gmail.com',
+    'rumidas500@gmail.com'
     # 'another@gmail.com',   ← just uncomment and add more
 }
 
