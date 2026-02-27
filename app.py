@@ -197,49 +197,43 @@ app.jinja_env.globals.update(
 # ─── Email via Gmail SMTP ─────────────────────────────────────────────────────
 
 def send_verification_email(to_email, token):
-    """Send verification email via Gmail. Returns True on success."""
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+    import requests
+    
+    api_key = os.environ.get('RESEND_API_KEY')
+    if not api_key:
+        print("[EMAIL ERROR] Missing RESEND_API_KEY")
+        return False
 
     verify_url = f'{SITE_URL}/verify/{token}'
 
-    if not GMAIL_USER or not GMAIL_PASS:
-        return False
-
     try:
-        html = f"""
-            <div style="font-family:sans-serif;max-width:500px;margin:40px auto;
-                        background:#181818;color:#f1f1f1;border-radius:12px;
-                        padding:32px;border:1px solid #3d3d3d">
-                <h2 style="color:#ff0000;margin-top:0">🎬 FlaskTube</h2>
-                <p style="font-size:16px">Thanks for signing up! One click to activate your account:</p>
-                <a href="{verify_url}"
-                   style="display:inline-block;background:#ff0000;color:#fff;
-                          padding:14px 28px;border-radius:8px;text-decoration:none;
-                          font-weight:bold;font-size:16px;margin:16px 0">
-                    ✓ Verify my account
-                </a>
-                <p style="color:#aaa;font-size:12px;margin-top:24px">
-                    Link not working? Copy and paste:<br>
-                    <a href="{verify_url}" style="color:#3ea6ff">{verify_url}</a>
-                </p>
-            </div>"""
-
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = 'Verify your FlaskTube account'
-        msg['From']    = f'FlaskTube <{GMAIL_USER}>'
-        msg['To']      = to_email
-        msg.attach(MIMEText(html, 'html'))
-
-        with smtplib.SMTP('smtp.gmail.com', 587, timeout=10) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.login(GMAIL_USER, GMAIL_PASS)
-            smtp.sendmail(GMAIL_USER, to_email, msg.as_string())
-
-        print(f'[EMAIL SENT] to={to_email}')
-        return True
+        # We send a standard POST request (Port 443) which isn't blocked
+        res = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "from": "onboarding@resend.dev", # Resend's default test email
+                "to": to_email,
+                "subject": "Verify your FlaskTube account",
+                "html": f"""
+                    <div style="font-family:sans-serif;max-width:500px;margin:auto;">
+                        <h2>🎬 FlaskTube</h2>
+                        <p>Verify your account by clicking the link below:</p>
+                        <a href="{verify_url}" style="background:#ff0000;color:#fff;padding:10px;text-decoration:none;">
+                            Verify my account
+                        </a>
+                    </div>
+                """
+            }
+        )
+        
+        if res.status_code == 200:
+            print(f'[EMAIL SENT] via Resend to={to_email}')
+            return True
+        else:
+            print(f'[EMAIL ERROR] Resend API: {res.text}')
+            return False
+            
     except Exception as e:
         print(f'[EMAIL ERROR] {e}')
         return False
