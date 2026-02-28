@@ -110,7 +110,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS subscriptions (
             subscriber_id INTEGER NOT NULL REFERENCES users(id),
             channel_id    INTEGER NOT NULL REFERENCES users(id),
-            created       TEXT    DEFAULT (datetime('now')),
+            created       TEXT    DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (subscriber_id, channel_id)
         );
         CREATE TABLE IF NOT EXISTS saved_videos (
@@ -199,7 +199,7 @@ def init_db():
         ('comments',      'parent_id',     'INTEGER REFERENCES comments(id)'),
         ('comments',      'is_pinned',     'INTEGER DEFAULT 0'),
         ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
-        ('subscriptions', 'created',       "TEXT DEFAULT (datetime('now'))"),
+        ('subscriptions', 'created',       "TEXT DEFAULT CURRENT_TIMESTAMP"),
         ('videos',        'tags',          "TEXT DEFAULT ''"),
         ('community_posts', 'type',        "TEXT DEFAULT 'text'"),
         ('community_posts', 'poll_options',"TEXT DEFAULT NULL"),
