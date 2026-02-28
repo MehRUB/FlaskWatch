@@ -204,6 +204,8 @@ def init_db():
         ('community_posts', 'type',        "TEXT DEFAULT 'text'"),
         ('community_posts', 'poll_options',"TEXT DEFAULT NULL"),
         ('users',         'last_ip',       'TEXT'),
+        ('community_posts', 'body',        "TEXT DEFAULT ''"),
+        ('community_posts', 'image',       "TEXT DEFAULT NULL"),
     ]
     for table, col, defn in migrations:
         try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
