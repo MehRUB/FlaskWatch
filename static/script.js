@@ -244,69 +244,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-
-  // Logic for EDIT page
-  const generateBtn = document.getElementById('generate-thumb-btn');
-  if (generateBtn && thumbInput) {
-    const videoUrl = generateBtn.dataset.videoUrl;
-    const gridContainer = document.getElementById('generated-thumbs-grid-edit');
-
-    generateBtn.addEventListener('click', async () => {
-        if (!videoUrl || !gridContainer) return;
-
-        generateBtn.textContent = 'Generating...';
-        generateBtn.disabled = true;
-        gridContainer.innerHTML = '<div style="padding:10px;color:var(--text2);font-size:13px"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px"></div> Generating thumbnails...</div>';
-
-        try {
-            const frames = await generateVideoFrames(videoUrl, 3);
-            gridContainer.innerHTML = '';
-
-            frames.forEach((blob) => {
-                const img = document.createElement('img');
-                img.src = URL.createObjectURL(blob);
-                img.className = 'generated-thumb';
-                img.onclick = () => {
-                    document.querySelectorAll('#generated-thumbs-grid-edit .generated-thumb').forEach(el => el.classList.remove('selected'));
-                    img.classList.add('selected');
-
-                    const fileObj = new File([blob], "thumbnail.jpg", { type: "image/jpeg" });
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(fileObj);
-                    thumbInput.files = dataTransfer.files;
-                };
-                gridContainer.appendChild(img);
-            });
-
-        } catch (err) {
-            console.error(err);
-            gridContainer.innerHTML = '<div style="color:var(--red); font-size:13px;">Failed to generate thumbnails.</div>';
-        } finally {
-            generateBtn.textContent = 'Generate from video';
-            generateBtn.disabled = false;
-        }
-    });
-  }
 });
 
-async function generateVideoFrames(videoSource, count) {
+async function generateVideoFrames(file, count) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
+    video.src = URL.createObjectURL(file);
     video.muted = true;
     video.playsInline = true;
-
-    let videoUrl;
-    if (videoSource instanceof File) {
-        videoUrl = URL.createObjectURL(videoSource);
-        video.src = videoUrl;
-    } else if (typeof videoSource === 'string') {
-        video.crossOrigin = 'anonymous'; // Good practice for URLs
-        videoUrl = videoSource;
-        video.src = videoUrl;
-    } else {
-        return reject(new Error('Invalid video source'));
-    }
     
     video.onloadedmetadata = async () => {
       const duration = video.duration;
@@ -326,16 +272,10 @@ async function generateVideoFrames(videoSource, count) {
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
         blobs.push(await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)));
       }
-
-      if (videoSource instanceof File) {
-        URL.revokeObjectURL(videoUrl); // Only revoke if it was a blob URL
-      }
+      URL.revokeObjectURL(video.src);
       resolve(blobs);
     };
-    video.onerror = (e) => {
-        console.error("Video load error:", e);
-        reject(new Error('Failed to load video for frame generation.'));
-    };
+    video.onerror = reject;
   });
 }
 
