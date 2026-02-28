@@ -1,92 +1,278 @@
 {% extends 'base.html' %}
 {% block title %}{{ owner.channel_name or owner.username }} - FlaskTube{% endblock %}
 {% block content %}
-
 <div class="channel-header">
-  {% if owner.banner %}
-    <div class="channel-banner" style="background-image:url('{{ url_for('uploaded_file', filename=owner.banner) }}');background-size:cover;background-position:center"></div>
-  {% else %}
-    <div class="channel-banner"></div>
-  {% endif %}
-
+  <div class="channel-banner" {% if owner.banner %}style="background-image: url({{ url_for('uploaded_file', filename=owner.banner) }})"{% endif %}></div>
   <div class="channel-header-info">
     {% if owner.avatar %}
       <img src="{{ url_for('uploaded_file', filename=owner.avatar) }}" class="avatar-lg" alt="">
     {% else %}
       <div class="avatar-lg avatar-placeholder" style="font-size:32px">{{ (owner.channel_name or owner.username)[0].upper() }}</div>
     {% endif %}
-
     <div class="channel-details">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <h1 class="channel-title">{{ owner.channel_name or owner.username }}</h1>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <h1 class="channel-title" style="margin:0">{{ owner.channel_name or owner.username }}</h1>
         {% if owner.is_verified %}
-          <span class="verify-badge" style="width:20px;height:20px;font-size:12px" title="Verified Creator">✓</span>
+          <span class="verify-badge" title="Verified">✓</span>
         {% endif %}
         {% if channel_is_admin %}
-          <span class="admin-channel-badge" style="font-size:12px;padding:2px 8px">Admin</span>
+          <span class="admin-channel-badge">Admin</span>
         {% endif %}
       </div>
-      <p class="channel-handle">@{{ owner.username }}</p>
-      <p class="channel-stats">{{ fmt_views(sub_count) }} subscribers · {{ videos|length }} videos</p>
-      {% if owner.bio %}<p class="channel-bio">{{ owner.bio }}</p>{% endif %}
+      <div class="channel-handle">@{{ owner.username }}</div>
+      <div class="channel-stats">{{ sub_count }} subscribers</div>
+      {% if owner.bio %}
+      <div class="channel-bio">{{ owner.bio }}</div>
+      {% endif %}
       {% if owner.channel_links %}
-        <div class="channel-links">
-          {% for link in owner.channel_links.split('\n') if link.strip() %}
-            <a href="{{ link.strip() if link.strip().startswith('http') else 'https://'+link.strip() }}"
-               target="_blank" class="channel-link-badge">{{ link.strip() }}</a>
-          {% endfor %}
-        </div>
+      <div class="channel-links">
+        {% for link in owner.channel_links.split(',') %}
+          <a href="{{ link.strip() }}" target="_blank" class="channel-link-badge">{{ link.strip() | replace("https://", "") | replace("http://", "") | replace("www.", "") }}</a>
+        {% endfor %}
+      </div>
       {% endif %}
     </div>
-
     <div class="channel-actions">
       {% if is_owner %}
         <a href="{{ url_for('edit_channel', channel_id=owner.id) }}" class="edit-channel-btn">Customize channel</a>
-        <a href="{{ url_for('settings') }}" class="edit-channel-btn">⚙ Settings</a>
-        <a href="{{ url_for('upload') }}" class="upload-btn">+ Upload</a>
+        <a href="{{ url_for('studio') }}" class="edit-channel-btn">Manage videos</a>
       {% elif session.user_id %}
         <button id="sub-btn" class="sub-btn {% if subbed %}subbed{% endif %}"
                 onclick="toggleSub({{ owner.id }})">
           {{ 'Subscribed' if subbed else 'Subscribe' }}
         </button>
-      {% else %}
-        <a href="{{ url_for('login') }}" class="sub-btn">Subscribe</a>
       {% endif %}
     </div>
   </div>
 </div>
 
 <div class="channel-tabs">
-  <div class="tab active">Videos</div>
+  <a href="{{ url_for('channel', channel_id=owner.id, tab='videos') }}" class="tab {% if tab == 'videos' %}active{% endif %}">VIDEOS</a>
+  <a href="{{ url_for('channel', channel_id=owner.id, tab='playlists') }}" class="tab {% if tab == 'playlists' %}active{% endif %}">PLAYLISTS</a>
+  <a href="{{ url_for('channel', channel_id=owner.id, tab='community') }}" class="tab {% if tab == 'community' %}active{% endif %}">COMMUNITY</a>
 </div>
 
-{% if videos %}
-  <div class="video-grid">
-    {% for v in videos %}
-    <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
-      <div class="video-thumb">
-        {% if v.thumbnail %}
-          <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
-        {% else %}
-          <div class="thumb-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="var(--text2)"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+<div class="channel-content">
+  {% if tab == 'videos' %}
+    {% if videos %}
+    <div class="video-grid">
+      {% for v in videos %}
+      <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+        <div class="video-thumb">
+          {% if v.thumbnail %}
+            <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+          {% else %}
+            <div class="thumb-placeholder">
+              <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+          {% endif %}
+        </div>
+        <div class="video-info">
+          <div class="video-title">{{ v.title }}</div>
+          <div class="video-meta">{{ fmt_views(v.views) }} views · {{ time_ago(v.created) }}</div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+      <p>This channel has no videos.</p>
+    {% endif %}
+  {% elif tab == 'playlists' %}
+    {% if playlists %}
+      <div class="video-grid">
+        {% for p in playlists %}
+        <a href="{{ url_for('playlist', playlist_id=p.id) }}" class="video-card">
+          <div class="video-thumb">
+            {% if p.thumbnail %}
+              <img src="{{ url_for('uploaded_file', filename=p.thumbnail) }}" alt="{{ p.name }}">
+            {% else %}
+              <div class="thumb-placeholder" style="background:var(--bg3)">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--text2)"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/></svg>
+              </div>
+            {% endif %}
+            <div style="position:absolute;bottom:0;right:0;background:rgba(0,0,0,0.8);color:#fff;padding:2px 6px;font-size:12px;border-top-left-radius:6px">
+              {{ p.video_count }} videos
+            </div>
+          </div>
+          <div class="video-info">
+            <div class="video-title">{{ p.name }}</div>
+            <div class="video-meta">{{ p.visibility|capitalize }} · Updated {{ time_ago(p.created) }}</div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>This channel has no public playlists.</p>
+    {% endif %}
+  {% elif tab == 'community' %}
+    {% if is_owner %}
+      <form action="{{ url_for('create_community_post') }}" method="post" enctype="multipart/form-data" class="community-post-form">
+        <textarea name="body" class="form-input" rows="3" placeholder="What's on your mind?" style="border:none;background:transparent;padding:0;resize:none;font-size:15px"></textarea>
+        
+        <!-- Image Upload Area -->
+        <div id="image-upload-section" style="display:none;">
+          <div class="image-upload-area" onclick="document.getElementById('post-image-input').click()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="display:block;margin:0 auto 8px"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+            <span>Click to select an image</span>
+          </div>
+          <input type="file" name="image" id="post-image-input" accept="image/*" style="display:none" onchange="previewPostImage(this)">
+          <div id="image-preview-box" class="image-preview-container" style="display:none">
+            <img id="image-preview-img" class="image-preview-img" src="">
+            <button type="button" onclick="clearPostImage()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer">✕</button>
+          </div>
+        </div>
+
+        <!-- Poll Fields -->
+        <div id="poll-fields" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border)">
+          <div id="poll-options-container">
+            <div class="poll-option-row">
+              <input type="text" name="poll_options" class="form-input" placeholder="Option 1">
+              <button type="button" class="poll-delete-btn" onclick="removePollOption(this)" title="Remove option">✕</button>
+            </div>
+            <div class="poll-option-row">
+              <input type="text" name="poll_options" class="form-input" placeholder="Option 2">
+              <button type="button" class="poll-delete-btn" onclick="removePollOption(this)" title="Remove option">✕</button>
+            </div>
+          </div>
+          <button type="button" class="add-option-btn" onclick="addPollOption()">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            Add option
+          </button>
+        </div>
+
+        <div class="post-creation-footer">
+          <div class="post-type-tabs">
+            <label class="post-type-btn active"><input type="radio" name="type" value="text" checked onchange="togglePostType(this)"> Text</label>
+            <label class="post-type-btn"><input type="radio" name="type" value="image" onchange="togglePostType(this)"> Image</label>
+            <label class="post-type-btn"><input type="radio" name="type" value="poll" onchange="togglePostType(this)"> Poll</label>
+          </div>
+          <button type="submit" class="sub-btn">Post</button>
+        </div>
+      </form>
+    {% endif %}
+    
+    {% for post in posts %}
+      <div class="community-post">
+        <div class="post-header">
+          <a href="{{ url_for('channel', channel_id=owner.id) }}">
+            {% if owner.avatar %}
+              <img src="{{ url_for('uploaded_file', filename=owner.avatar) }}" class="avatar-md">
+            {% else %}
+              <div class="avatar-md avatar-placeholder">{{ (owner.channel_name or owner.username)[0].upper() }}</div>
+            {% endif %}
+          </a>
+          <div>
+            <a href="{{ url_for('channel', channel_id=owner.id) }}" class="comment-author">{{ owner.channel_name or owner.username }}</a>
+            <span class="comment-time">{{ time_ago(post.created) }}</span>
+          </div>
+          {% if is_owner %}
+          <div class="post-header-actions">
+            <button class="post-delete-btn" onclick="openDeletePostModal({{ post.id }})" title="Delete post">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+          </div>
+          {% endif %}
+        </div>
+        <div class="post-body">{{ post.body }}</div>
+        {% if post.image %}
+          <img src="{{ url_for('uploaded_file', filename=post.image) }}" class="post-image">
+        {% endif %}
+        {% if post.type == 'poll' %}
+          <div class="poll-container">
+            {% for opt, count, pct in zip(post.options, post.vote_counts, post.vote_percents) %}
+              <div class="poll-option {% if post.user_vote is not none %}voted{% endif %}" {% if post.user_vote is none %}onclick="votePoll({{ post.id }}, {{ loop.index0 }})"{% endif %}>
+                <div class="poll-bar" style="width:{{ pct }}%"></div>
+                <div class="poll-text">
+                  <span>{{ opt }}</span>
+                  {% if post.user_vote is not none %}<span>{{ pct }}%</span>{% endif %}
+                </div>
+              </div>
+            {% endfor %}
+            <div style="font-size:12px;color:var(--text2);margin-top:4px">{{ post.total_votes }} votes</div>
           </div>
         {% endif %}
+        
+        <!-- Post Actions -->
+        <div class="post-actions-bar">
+          <button class="post-action-btn {% if post.my_vote == 1 %}active{% endif %}" onclick="ratePost({{ post.id }}, 1, this)">
+            👍 <span class="count">{{ post.likes }}</span>
+          </button>
+          <button class="post-action-btn {% if post.my_vote == -1 %}active{% endif %}" onclick="ratePost({{ post.id }}, -1, this)">
+            👎 <span class="count">{{ post.dislikes }}</span>
+          </button>
+          <button class="post-action-btn" onclick="togglePostComments({{ post.id }})">
+            💬 {{ post.comments|length }}
+          </button>
+        </div>
+
+        <!-- Post Comments -->
+        <div id="post-comments-{{ post.id }}" class="post-comments-section" style="display:none">
+          {% if session.user_id %}
+          <div class="post-comment-input-row">
+            <input type="text" class="post-comment-input" placeholder="Add a comment..." id="post-input-{{ post.id }}">
+            <button class="post-comment-submit" onclick="submitPostComment({{ post.id }})">Comment</button>
+          </div>
+          {% endif %}
+          <div class="post-comments-list" id="post-comments-list-{{ post.id }}">
+            {% for c in post.comments %}
+            <div class="post-comment-item" id="post-comment-{{ c.id }}">
+              <a href="{{ url_for('channel', channel_id=c.user_id) }}">
+                {% if c.avatar %}
+                  <img src="{{ url_for('uploaded_file', filename=c.avatar) }}" class="avatar-sm" style="width:24px;height:24px">
+                {% else %}
+                  <div class="avatar-sm avatar-placeholder" style="width:24px;height:24px;font-size:10px">{{ c.username[0].upper() }}</div>
+                {% endif %}
+              </a>
+              <div style="flex:1">
+                <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+                  <span style="font-weight:600">{{ c.username }}</span>
+                  <span style="color:var(--text2)">{{ time_ago(c.created) }}</span>
+                </div>
+                <div style="font-size:13px;margin-top:2px">{{ c.body }}</div>
+              </div>
+              {% if session.user_id == c.user_id or is_owner or channel_is_admin %}
+              <button class="post-delete-btn" style="width:24px;height:24px" onclick="openDeletePostCommentModal({{ c.id }})">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              </button>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
       </div>
-      <div class="video-info">
-        <p class="video-title">{{ v.title }}</p>
-        <p class="video-meta">{{ fmt_views(v.views) }} views · {{ time_ago(v.created) }}</p>
-      </div>
-    </a>
+    {% else %}
+      <p>This channel hasn't posted anything yet.</p>
     {% endfor %}
+  {% endif %}
+</div>
+
+<!-- Delete Post Modal -->
+<div class="modal-backdrop" id="delete-post-modal">
+  <div class="modal">
+    <h3>Delete post?</h3>
+    <p style="color:var(--text2);font-size:14px;margin:12px 0 24px;line-height:1.5">
+      Are you sure you want to delete this post? This action cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeDeletePostModal()">Cancel</button>
+      <button class="modal-btn modal-btn-submit" onclick="confirmDeletePost()">Delete</button>
+    </div>
   </div>
-{% else %}
-  <div class="empty-state">
-    <svg width="80" height="80" viewBox="0 0 24 24" fill="var(--text2)"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-    <p>No videos yet</p>
-    {% if is_owner %}<a href="{{ url_for('upload') }}" class="upload-btn" style="display:inline-block;margin-top:16px">Upload your first video</a>{% endif %}
+</div>
+
+<!-- Delete Post Comment Modal -->
+<div class="modal-backdrop" id="delete-post-comment-modal">
+  <div class="modal">
+    <h3>Delete comment?</h3>
+    <p style="color:var(--text2);font-size:14px;margin:12px 0 24px;line-height:1.5">
+      Are you sure you want to delete this comment? This action cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeDeletePostCommentModal()">Cancel</button>
+      <button class="modal-btn modal-btn-submit" onclick="confirmDeletePostComment()">Delete</button>
+    </div>
   </div>
-{% endif %}
+</div>
 
 <script>
 async function toggleSub(channelId) {
@@ -96,6 +282,7 @@ async function toggleSub(channelId) {
   const btn = document.getElementById('sub-btn');
   btn.classList.toggle('subbed', d.subbed);
   btn.textContent = d.subbed ? 'Subscribed' : 'Subscribe';
+  // No sub count on this page to update
 }
 </script>
 {% endblock %}

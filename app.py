@@ -3,7 +3,8 @@ import uuid
 import sqlite3
 import base64
 import random
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, send_from_directory, g)
@@ -148,6 +149,44 @@ def init_db():
             image      TEXT    DEFAULT NULL,
             created    TEXT    DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS community_post_votes (
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            post_id    INTEGER NOT NULL REFERENCES community_posts(id),
+            option_idx INTEGER NOT NULL,
+            PRIMARY KEY (user_id, post_id)
+        );
+        CREATE TABLE IF NOT EXISTS playlists (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            name       TEXT    NOT NULL,
+            visibility TEXT    DEFAULT 'public',
+            created    TEXT    DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS playlist_videos (
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id),
+            video_id    INTEGER NOT NULL REFERENCES videos(id),
+            added_at    TEXT    DEFAULT (datetime('now')),
+            PRIMARY KEY (playlist_id, video_id)
+        );
+        CREATE TABLE IF NOT EXISTS banned_ips (
+            ip      TEXT PRIMARY KEY,
+            reason  TEXT,
+            created TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS community_post_likes (
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            post_id INTEGER NOT NULL REFERENCES community_posts(id),
+            vote    INTEGER NOT NULL, -- 1 for like, -1 for dislike
+            PRIMARY KEY (user_id, post_id)
+        );
+        CREATE TABLE IF NOT EXISTS community_post_comments (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            post_id    INTEGER NOT NULL REFERENCES community_posts(id),
+            body       TEXT    NOT NULL,
+            created    TEXT    DEFAULT (datetime('now')),
+            is_removed INTEGER DEFAULT 0
+        );
     ''')
     migrations = [
         ('users',         'banner',        'TEXT DEFAULT NULL'),
@@ -162,6 +201,9 @@ def init_db():
         ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
         ('subscriptions', 'created',       'TEXT DEFAULT (datetime(''now''))'),
         ('videos',        'tags',          "TEXT DEFAULT ''"),
+        ('community_posts', 'type',        "TEXT DEFAULT 'text'"),
+        ('community_posts', 'poll_options',"TEXT DEFAULT NULL"),
+        ('users',         'last_ip',       'TEXT'),
     ]
     for table, col, defn in migrations:
         try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
@@ -218,7 +260,7 @@ def save_file(file, subfolder=''):
 def time_ago(dt_str):
     try: dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
     except: return dt_str
-    s = (datetime.utcnow() - dt).total_seconds()
+    s = (datetime.now(timezone.utc) - dt.replace(tzinfo=timezone.utc)).total_seconds()
     if s < 60:       return 'just now'
     if s < 3600:     return f'{int(s//60)}m ago'
     if s < 86400:    return f'{int(s//3600)}h ago'
@@ -234,7 +276,8 @@ def fmt_views(n):
 app.jinja_env.globals.update(
     time_ago=time_ago, fmt_views=fmt_views,
     current_user=current_user, is_admin=is_admin,
-    ADMIN_EMAILS=ADMIN_EMAILS
+    ADMIN_EMAILS=ADMIN_EMAILS,
+    zip=zip
 )
 
 # ─── AI Moderation ────────────────────────────────────────────────────────────
@@ -288,10 +331,15 @@ def uploaded_file(filename):
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
+        db = get_db()
+        ip = request.remote_addr
+        if db.execute('SELECT 1 FROM banned_ips WHERE ip=?', (ip,)).fetchone():
+            flash('Registration from this location is currently disabled.', 'error')
+            return redirect(url_for('login'))
+
         username = request.form['username'].strip()
         email = request.form['email'].strip()
         password = request.form['password']
-        db = get_db()
         if db.execute('SELECT id FROM users WHERE username=? OR email=?', (username, email)).fetchone():
             flash('Username or email already taken.', 'error')
             return redirect(url_for('register'))
@@ -299,8 +347,8 @@ def register():
         # You (mehdiprodmus@gmail.com) get the badge automatically
         auto_verified = 1 if email in ADMIN_EMAILS else 0
         
-        db.execute('INSERT INTO users (username, email, password, is_verified) VALUES (?,?,?,?)',
-                   (username, email, generate_password_hash(password), auto_verified))
+        db.execute('INSERT INTO users (username, email, password, is_verified, last_ip) VALUES (?,?,?,?,?)',
+                   (username, email, generate_password_hash(password), auto_verified, ip))
         db.commit()
         user = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
         session['user_id'] = user['id']
@@ -310,14 +358,23 @@ def register():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    db = get_db()
+    ip = request.remote_addr
+    if db.execute('SELECT 1 FROM banned_ips WHERE ip=?', (ip,)).fetchone():
+        flash('Access from this location has been disabled.', 'error')
+        return render_template('login.html')
+
     if request.method == 'POST':
         username = request.form['username'].strip()
         password = request.form['password']
-        db   = get_db()
         user = db.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone()
         if not user or not check_password_hash(user['password'], password):
             flash('Invalid username or password.', 'error')
             return redirect(url_for('login'))
+        
+        # Update IP on login
+        db.execute('UPDATE users SET last_ip=? WHERE id=?', (ip, user['id']))
+        db.commit()
         session['user_id'] = user['id']
         return redirect(request.args.get('next') or url_for('index'))
     return render_template('login.html')
@@ -440,7 +497,7 @@ def random_video():
         SELECT uuid
         FROM videos
         WHERE is_removed=0
-          AND (visibility="public" OR (visibility="scheduled" AND scheduled_at <= datetime("now")))
+          AND (visibility="public" OR (visibility="scheduled" AND datetime(scheduled_at) <= datetime("now")))
         ORDER BY RANDOM() LIMIT 1
     ''').fetchone()
     if not row:
@@ -455,15 +512,22 @@ def api_videos():
     offset = (page - 1) * limit
     q      = request.args.get('q', '').strip()
     db     = get_db()
-    base_where = 'v.is_removed=0 AND (v.visibility="public" OR (v.visibility="scheduled" AND v.scheduled_at <= datetime("now")))'
+    base_where = 'v.is_removed=0 AND (v.visibility="public" OR (v.visibility="scheduled" AND datetime(v.scheduled_at) <= datetime("now")))'
+    exclude_uuid = request.args.get('exclude', None)
+    params = []
+    if exclude_uuid:
+        base_where += ' AND v.uuid != ?'
+        params.append(exclude_uuid)
+
     if q:
+        q_params = [f'%{q}%', f'%{q}%', limit, offset]
         rows = db.execute('''
             SELECT v.*, u.username, u.avatar, u.channel_name, u.email, u.is_verified,
                    (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
             FROM videos v JOIN users u ON v.user_id=u.id
             WHERE ''' + base_where + ''' AND (v.title LIKE ? OR v.description LIKE ?)
             ORDER BY v.created DESC LIMIT ? OFFSET ?
-        ''', (f'%{q}%', f'%{q}%', limit, offset)).fetchall()
+        ''', tuple(params + q_params)).fetchall()
     else:
         # Random feed; if there are fewer than "limit" unique videos,
         # duplicate some entries so the grid still fills (useful when only 1 video exists).
@@ -472,7 +536,7 @@ def api_videos():
                    (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
             FROM videos v JOIN users u ON v.user_id=u.id
             WHERE ''' + base_where + '''
-        ''').fetchall()
+        ''', tuple(params)).fetchall()
         if not base_rows:
             rows = []
         else:
@@ -489,7 +553,46 @@ def api_videos():
 
 @app.route('/search')
 def search():
-    return render_template('index.html', search_query=request.args.get('q', ''))
+    q = request.args.get('q', '').strip()
+    if not q: return redirect(url_for('index'))
+    
+    db = get_db()
+    
+    # Search channels (users)
+    channels = db.execute('''
+        SELECT * FROM users 
+        WHERE username LIKE ? OR channel_name LIKE ?
+        LIMIT 5
+    ''', (f'%{q}%', f'%{q}%')).fetchall()
+    
+    # Search videos
+    videos = db.execute('''
+        SELECT v.*, u.username, u.avatar, u.channel_name, u.is_verified,
+               (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
+        FROM videos v JOIN users u ON v.user_id=u.id
+        WHERE v.is_removed=0 
+          AND (v.visibility="public" OR (v.visibility="scheduled" AND datetime(v.scheduled_at) <= datetime("now")))
+          AND (v.title LIKE ? OR v.description LIKE ?)
+        ORDER BY v.created DESC LIMIT 50
+    ''', (f'%{q}%', f'%{q}%')).fetchall()
+    
+    sub_counts = {}
+    my_subs = set()
+    
+    if channels:
+        for c in channels:
+            cnt = db.execute('SELECT COUNT(*) FROM subscriptions WHERE channel_id=?', (c['id'],)).fetchone()[0]
+            sub_counts[c['id']] = cnt
+            
+        if 'user_id' in session:
+            uid = session['user_id']
+            placeholders = ','.join('?' for _ in channels)
+            ids = [c['id'] for c in channels]
+            params = [uid] + ids
+            subs = db.execute(f'SELECT channel_id FROM subscriptions WHERE subscriber_id=? AND channel_id IN ({placeholders})', params).fetchall()
+            my_subs = {s['channel_id'] for s in subs}
+
+    return render_template('search.html', q=q, channels=channels, videos=videos, sub_counts=sub_counts, my_subs=my_subs)
 
 @app.route('/trending')
 def trending():
@@ -549,7 +652,7 @@ def upload():
         vid_uuid = uuid.uuid4().hex
         # Normalize scheduling: only allow scheduled when a future datetime is provided
         if visibility == 'scheduled' and scheduled_at_raw:
-            scheduled_at = scheduled_at_raw
+            scheduled_at = scheduled_at_raw.replace('T', ' ')
         else:
             scheduled_at = None
             if visibility == 'scheduled':
@@ -577,6 +680,33 @@ def upload():
 
 # ─── Watch ────────────────────────────────────────────────────────────────────
 
+@app.route('/playlist/<int:playlist_id>')
+def playlist(playlist_id):
+    db = get_db()
+    p = db.execute('SELECT * FROM playlists WHERE id=?', (playlist_id,)).fetchone()
+    if not p:
+        flash('Playlist not found.', 'error')
+        return redirect(url_for('index'))
+    
+    # Visibility check
+    if p['visibility'] == 'private':
+        uid = session.get('user_id')
+        if not (uid and (uid == p['user_id'] or is_admin())):
+            flash('Playlist is private.', 'error')
+            return redirect(url_for('index'))
+
+    row = db.execute('''
+        SELECT v.uuid FROM playlist_videos pv
+        JOIN videos v ON pv.video_id = v.id
+        WHERE pv.playlist_id = ? AND v.is_removed = 0
+        ORDER BY pv.added_at ASC LIMIT 1
+    ''', (playlist_id,)).fetchone()
+    if row:
+        return redirect(url_for('watch', vid_uuid=row['uuid'], list=playlist_id))
+    
+    flash('Playlist is empty.', 'info')
+    return redirect(url_for('channel', channel_id=p['user_id'], tab='playlists'))
+
 @app.route('/watch/<vid_uuid>')
 def watch(vid_uuid):
     db    = get_db()
@@ -598,7 +728,8 @@ def watch(vid_uuid):
         return redirect(url_for('index'))
     if video['visibility'] == 'scheduled' and not (uid and (uid == video['user_id'] or is_admin())):
         # Only show to public after scheduled_at
-        if not video['scheduled_at'] or video['scheduled_at'] > datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'):
+        sched = video['scheduled_at'].replace('T', ' ') if video['scheduled_at'] else None
+        if not sched or sched > datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'):
             flash('This video is not yet available.', 'error')
             return redirect(url_for('index'))
     db.execute('UPDATE videos SET views=views+1 WHERE uuid=?', (vid_uuid,))
@@ -640,21 +771,59 @@ def watch(vid_uuid):
     subbed = bool(uid and db.execute('SELECT 1 FROM subscriptions WHERE subscriber_id=? AND channel_id=?', (uid, video['channel_id'])).fetchone())
     saved  = bool(uid and db.execute('SELECT 1 FROM saved_videos WHERE user_id=? AND video_id=?', (uid, video['id'])).fetchone())
     
-    # Related videos based on tags or title
-    tags = [t.strip() for t in (video['tags'] or '').split(',') if t.strip()]
-    tag_pattern = '%' + '%'.join(tags[:3]) + '%' if tags else ''
-    
-    related = db.execute('''
+    # Related videos
+    other_videos = db.execute('''
         SELECT v.uuid, v.title, v.thumbnail, v.views, u.username, u.channel_name, u.is_verified
         FROM videos v JOIN users u ON v.user_id=u.id
         WHERE v.uuid != ? AND v.is_removed=0
-        ORDER BY (CASE WHEN v.tags LIKE ? THEN 1 ELSE 0 END) DESC, RANDOM()
-        LIMIT 10
-    ''', (vid_uuid, tag_pattern)).fetchall()
+          AND (v.visibility="public" OR (v.visibility="scheduled" AND datetime(v.scheduled_at) <= datetime("now")))
+    ''', (vid_uuid,)).fetchall()
+
+    if not other_videos:
+        related = []
+    else:
+        related = [random.choice(other_videos) for _ in range(10)]
+
+    # Playlist context
+    playlist_items = []
+    playlist_data  = None
+    pl_id = request.args.get('list')
+    if pl_id:
+        try:
+            pl_id = int(pl_id)
+            playlist_data = db.execute('SELECT * FROM playlists WHERE id=?', (pl_id,)).fetchone()
+            if playlist_data:
+                # Check visibility
+                if playlist_data['visibility'] == 'private':
+                    if not (uid and (uid == playlist_data['user_id'] or is_admin())):
+                        playlist_data = None
+                
+                if playlist_data:
+                    playlist_items = db.execute('''
+                        SELECT v.uuid, v.title, v.thumbnail, v.views, u.username, u.channel_name, v.id
+                        FROM playlist_videos pv
+                        JOIN videos v ON pv.video_id = v.id
+                        JOIN users u ON v.user_id = u.id
+                        WHERE pv.playlist_id = ? AND v.is_removed = 0
+                        ORDER BY pv.added_at ASC
+                    ''', (pl_id,)).fetchall()
+        except: pass
+    
+    # Get user's playlists for "Add to" modal
+    my_playlists = []
+    if uid:
+        my_playlists = db.execute('''
+            SELECT p.id, p.name, p.visibility,
+                   (SELECT 1 FROM playlist_videos WHERE playlist_id=p.id AND video_id=?) AS has_video
+            FROM playlists p WHERE p.user_id=? ORDER BY p.created DESC
+        ''', (video['id'], uid)).fetchall()
+
     return render_template('watch.html', video=video, comments=comments,
                            liked=liked, subbed=subbed, saved=saved,
                            related=related, user_votes=user_votes,
-                           ADMIN_EMAILS=ADMIN_EMAILS)
+                           ADMIN_EMAILS=ADMIN_EMAILS,
+                           playlist_items=playlist_items, playlist_data=playlist_data,
+                           my_playlists=my_playlists)
 
 
 # ─── Like / Save / Comment / Subscribe ───────────────────────────────────────
@@ -665,12 +834,21 @@ def toggle_like(vid_uuid):
     db    = get_db()
     video = db.execute('SELECT id FROM videos WHERE uuid=? AND is_removed=0', (vid_uuid,)).fetchone()
     if not video: return jsonify({'error': 'Not found'}), 404
+    
+    # Get video owner for notification
+    vid_owner = db.execute('SELECT user_id, title FROM videos WHERE id=?', (video['id'],)).fetchone()
+    
     uid = session['user_id']
     if db.execute('SELECT 1 FROM likes WHERE user_id=? AND video_id=?', (uid, video['id'])).fetchone():
         db.execute('DELETE FROM likes WHERE user_id=? AND video_id=?', (uid, video['id']))
         liked = False
     else:
         db.execute('INSERT INTO likes (user_id, video_id) VALUES (?,?)', (uid, video['id']))
+        if uid != vid_owner['user_id']:
+            u = current_user()
+            msg = f"{u['username']} liked your video: {vid_owner['title']}"
+            link = url_for('watch', vid_uuid=vid_uuid)
+            db.execute('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)', (vid_owner['user_id'], msg, link))
         liked = True
     db.commit()
     count = db.execute('SELECT COUNT(*) FROM likes WHERE video_id=?', (video['id'],)).fetchone()[0]
@@ -698,6 +876,9 @@ def add_comment(vid_uuid):
     db    = get_db()
     video = db.execute('SELECT id FROM videos WHERE uuid=? AND is_removed=0', (vid_uuid,)).fetchone()
     if not video: return jsonify({'error': 'Not found'}), 404
+    
+    vid_info = db.execute('SELECT user_id, title FROM videos WHERE id=?', (video['id'],)).fetchone()
+
     body = request.json.get('body', '').strip()
     parent_id = request.json.get('parent_id')
     if not body: return jsonify({'error': 'Empty comment'}), 400
@@ -710,6 +891,13 @@ def add_comment(vid_uuid):
                (session['user_id'], video['id'], body, parent_id))
     db.commit()
     u = db.execute('SELECT username, avatar, is_verified FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    
+    # Notify video owner
+    if session['user_id'] != vid_info['user_id']:
+        msg = f"{u['username']} commented on: {vid_info['title']}"
+        link = url_for('watch', vid_uuid=vid_uuid)
+        db.execute('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)', (vid_info['user_id'], msg, link))
+
     comment_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
     return jsonify({'id': comment_id, 'username': u['username'], 'avatar': u['avatar'],
                     'body': body, 'created': 'just now',
@@ -803,6 +991,11 @@ def toggle_subscribe(channel_id):
         subbed = False
     else:
         db.execute('INSERT INTO subscriptions (subscriber_id, channel_id) VALUES (?,?)', (uid, channel_id))
+        # Notify channel owner
+        u = current_user()
+        msg = f"{u['username']} subscribed to your channel!"
+        link = url_for('channel', channel_id=u['id'])
+        db.execute('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)', (channel_id, msg, link))
         subbed = True
     db.commit()
     count = db.execute('SELECT COUNT(*) FROM subscriptions WHERE channel_id=?', (channel_id,)).fetchone()[0]
@@ -852,6 +1045,7 @@ def report():
 @admin_required
 def admin():
     db = get_db()
+    user_q = request.args.get('user_q', '').strip()
     reports = db.execute('''
         SELECT r.*, u.username AS reporter_name,
                v.title AS video_title, v.uuid AS video_uuid, v.is_removed AS video_removed,
@@ -866,9 +1060,13 @@ def admin():
     ''').fetchall()
     
     # User management list
-    users = db.execute('''
-        SELECT * FROM users ORDER BY created DESC LIMIT 100
-    ''').fetchall()
+    if user_q:
+        users = db.execute('''
+            SELECT * FROM users WHERE username LIKE ? OR email LIKE ? OR channel_name LIKE ? OR last_ip LIKE ?
+            ORDER BY created DESC LIMIT 100
+        ''', (f'%{user_q}%', f'%{user_q}%', f'%{user_q}%', f'%{user_q}%')).fetchall()
+    else:
+        users = db.execute('SELECT * FROM users ORDER BY created DESC LIMIT 100').fetchall()
     
     stats = {
         'total_users':     db.execute('SELECT COUNT(*) FROM users').fetchone()[0],
@@ -878,7 +1076,7 @@ def admin():
         'ai_enabled':      bool(GOOGLE_VISION_KEY),
         'email_enabled':   bool(GMAIL_USER),
     }
-    return render_template('admin.html', reports=reports, stats=stats, users=users)
+    return render_template('admin.html', reports=reports, stats=stats, users=users, user_q=user_q)
 
 @app.route('/admin/remove-video/<vid_uuid>', methods=['POST'])
 @admin_required
@@ -921,15 +1119,96 @@ def admin_dismiss_report(report_id):
 @app.route('/admin/ban-user/<int:user_id>', methods=['POST'])
 @admin_required
 def admin_ban_user(user_id):
-    target = get_db().execute('SELECT email FROM users WHERE id=?', (user_id,)).fetchone()
-    if target and target['email'] in ADMIN_EMAILS:
+    db = get_db()
+    target = db.execute('SELECT email, last_ip FROM users WHERE id=?', (user_id,)).fetchone()
+    if not target:
+        flash('User not found.', 'error')
+        return redirect(url_for('admin'))
+    if target['email'] in ADMIN_EMAILS:
         flash('Cannot ban an admin.', 'error')
         return redirect(url_for('admin'))
-    db = get_db()
-    db.execute('UPDATE videos SET is_removed=1 WHERE user_id=?', (user_id,))
+    
+    # 1. Ban IP
+    ip_banned = False
+    if target['last_ip']:
+        if target['last_ip'] == request.remote_addr:
+            flash("You cannot ban your own IP address.", 'error')
+            return redirect(url_for('admin'))
+
+        reason = request.form.get('reason', 'Banned by admin.')
+        try:
+            db.execute('INSERT INTO banned_ips (ip, reason) VALUES (?,?)', (target['last_ip'], reason))
+            ip_banned = True
+        except sqlite3.IntegrityError: # IP already banned, update reason
+            db.execute('UPDATE banned_ips SET reason=? WHERE ip=?', (reason, target['last_ip']))
+            ip_banned = True
+
+    # 2. Delete User Content & References
+    
+    # A. Videos owned by user (must delete dependencies first)
+    user_vids = db.execute('SELECT id FROM videos WHERE user_id=?', (user_id,)).fetchall()
+    vid_ids = [v['id'] for v in user_vids]
+    if vid_ids:
+        p = ','.join('?' for _ in vid_ids)
+        db.execute(f'DELETE FROM likes WHERE video_id IN ({p})', vid_ids)
+        db.execute(f'DELETE FROM saved_videos WHERE video_id IN ({p})', vid_ids)
+        db.execute(f'DELETE FROM watch_history WHERE video_id IN ({p})', vid_ids)
+        db.execute(f'DELETE FROM playlist_videos WHERE video_id IN ({p})', vid_ids)
+        db.execute(f'DELETE FROM reports WHERE video_id IN ({p})', vid_ids)
+        
+        # Delete comments on these videos (and their votes/reports)
+        vid_comments = db.execute(f'SELECT id FROM comments WHERE video_id IN ({p})', vid_ids).fetchall()
+        vc_ids = [c['id'] for c in vid_comments]
+        if vc_ids:
+            cp = ','.join('?' for _ in vc_ids)
+            db.execute(f'DELETE FROM comment_votes WHERE comment_id IN ({cp})', vc_ids)
+            db.execute(f'DELETE FROM reports WHERE comment_id IN ({cp})', vc_ids)
+            db.execute(f'DELETE FROM comments WHERE video_id IN ({p})', vid_ids)
+            
+        db.execute(f'DELETE FROM videos WHERE id IN ({p})', vid_ids)
+
+    # B. Community Posts owned by user
+    user_posts = db.execute('SELECT id FROM community_posts WHERE user_id=?', (user_id,)).fetchall()
+    post_ids = [x['id'] for x in user_posts]
+    if post_ids:
+        p = ','.join('?' for _ in post_ids)
+        db.execute(f'DELETE FROM community_post_votes WHERE post_id IN ({p})', post_ids)
+        db.execute(f'DELETE FROM community_post_likes WHERE post_id IN ({p})', post_ids)
+        db.execute(f'DELETE FROM community_post_comments WHERE post_id IN ({p})', post_ids)
+        db.execute(f'DELETE FROM community_posts WHERE id IN ({p})', post_ids)
+
+    # C. Playlists owned by user
+    user_playlists = db.execute('SELECT id FROM playlists WHERE user_id=?', (user_id,)).fetchall()
+    if user_playlists:
+        pl_ids = [x['id'] for x in user_playlists]
+        p = ','.join('?' for _ in pl_ids)
+        db.execute(f'DELETE FROM playlist_videos WHERE playlist_id IN ({p})', pl_ids)
+        db.execute(f'DELETE FROM playlists WHERE id IN ({p})', pl_ids)
+
+    # D. Direct references (User as actor)
+    # Note: Comments authored by user on OTHER videos are tricky due to replies.
+    # For simplicity in this fix, we delete the user's comments. 
+    # If this fails due to replies, we might need a recursive delete, but usually this suffices.
+    db.execute('DELETE FROM comments WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM community_post_comments WHERE user_id=?', (user_id,))
+    
+    db.execute('DELETE FROM subscriptions WHERE subscriber_id=? OR channel_id=?', (user_id, user_id))
+    db.execute('DELETE FROM saved_videos WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM likes WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM comment_votes WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM community_post_votes WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM community_post_likes WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM watch_history WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM reports WHERE reporter_id=?', (user_id,))
+    db.execute('DELETE FROM notifications WHERE user_id=?', (user_id,))
+    
     db.execute('DELETE FROM users WHERE id=?', (user_id,))
     db.commit()
-    flash('User banned.', 'success')
+
+    msg = 'User has been deleted.'
+    if ip_banned:
+        msg = f"User deleted and their IP ({target['last_ip']}) has been banned."
+    flash(msg, 'success')
     return redirect(url_for('admin'))
 
 @app.route('/admin/verify-user/<int:user_id>', methods=['POST'])
@@ -939,6 +1218,34 @@ def admin_verify_user(user_id):
     db.execute('UPDATE users SET is_verified=1 WHERE id=?', (user_id,))
     db.commit()
     flash('User has been verified!', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/unverify-user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_unverify_user(user_id):
+    db = get_db()
+    db.execute('UPDATE users SET is_verified=0 WHERE id=?', (user_id,))
+    db.commit()
+    flash('User verification removed.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/message-user/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_message_user(user_id):
+    message = request.form.get('message', '').strip()
+    if not message:
+        flash('Message cannot be empty.', 'error')
+        return redirect(url_for('admin'))
+    db = get_db()
+    if not db.execute('SELECT id FROM users WHERE id=?', (user_id,)).fetchone():
+        flash('User not found.', 'error')
+        return redirect(url_for('admin'))
+    
+    link = url_for('channel', channel_id=user_id)
+    db.execute('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)',
+               (user_id, f'[Admin Message] {message}', link))
+    db.commit()
+    flash('Message sent to user.', 'success')
     return redirect(url_for('admin'))
 
 
@@ -951,25 +1258,78 @@ def channel(channel_id):
     if not owner:
         flash('Channel not found.', 'error')
         return redirect(url_for('index'))
+    
     uid      = session.get('user_id')
     is_owner = (uid == channel_id)
-    videos = db.execute('''
-        SELECT v.*, (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
-        FROM videos v
-        WHERE v.user_id=?
-          AND v.is_removed=0
-          AND (
-            ? = 1
-            OR v.visibility IN ('public','unlisted')
-            OR (v.visibility='scheduled' AND v.scheduled_at <= datetime('now'))
-          )
-        ORDER BY v.created DESC
-    ''', (channel_id, 1 if is_owner or (uid and is_admin()) else 0)).fetchall()
+    tab      = request.args.get('tab', 'videos')
+    
+    videos = []
+    playlists = []
+    posts = []
+
+    if tab == 'videos':
+        videos = db.execute('''
+            SELECT v.*, (SELECT COUNT(*) FROM likes WHERE video_id=v.id) AS like_count
+            FROM videos v
+            WHERE v.user_id=?
+              AND v.is_removed=0
+              AND (
+                ? = 1
+                OR v.visibility IN ('public','unlisted')
+                OR (v.visibility='scheduled' AND datetime(v.scheduled_at) <= datetime('now'))
+              )
+            ORDER BY v.created DESC
+        ''', (channel_id, 1 if is_owner or (uid and is_admin()) else 0)).fetchall()
+    
+    elif tab == 'playlists':
+        playlists = db.execute('''
+            SELECT p.*, (SELECT COUNT(*) FROM playlist_videos WHERE playlist_id=p.id) AS video_count,
+                   (SELECT thumbnail FROM videos v JOIN playlist_videos pv ON v.id=pv.video_id WHERE pv.playlist_id=p.id ORDER BY pv.added_at DESC LIMIT 1) as thumbnail
+            FROM playlists p
+            WHERE p.user_id=? AND (p.visibility='public' OR ?=1)
+            ORDER BY p.created DESC
+        ''', (channel_id, 1 if is_owner else 0)).fetchall()
+
+    elif tab == 'community':
+        raw_posts = db.execute('SELECT * FROM community_posts WHERE user_id=? ORDER BY created DESC', (channel_id,)).fetchall()
+        for p in raw_posts:
+            post = dict(p)
+            if post['type'] == 'poll' and post['poll_options']:
+                post['options'] = json.loads(post['poll_options'])
+                # Calculate votes
+                votes = db.execute('SELECT option_idx, COUNT(*) as c FROM community_post_votes WHERE post_id=? GROUP BY option_idx', (post['id'],)).fetchall()
+                vote_map = {v['option_idx']: v['c'] for v in votes}
+                total_votes = sum(vote_map.values())
+                post['total_votes'] = total_votes
+                post['vote_counts'] = [vote_map.get(i, 0) for i in range(len(post['options']))]
+                post['vote_percents'] = [(int((vote_map.get(i, 0)/total_votes)*100) if total_votes else 0) for i in range(len(post['options']))]
+                # Check if current user voted
+                if uid:
+                    uv = db.execute('SELECT option_idx FROM community_post_votes WHERE post_id=? AND user_id=?', (post['id'], uid)).fetchone()
+                    post['user_vote'] = uv['option_idx'] if uv else None
+            
+            # Likes/Dislikes for the post itself
+            post['likes'] = db.execute('SELECT COUNT(*) FROM community_post_likes WHERE post_id=? AND vote=1', (post['id'],)).fetchone()[0]
+            post['dislikes'] = db.execute('SELECT COUNT(*) FROM community_post_likes WHERE post_id=? AND vote=-1', (post['id'],)).fetchone()[0]
+            post['my_vote'] = 0
+            if uid:
+                mv = db.execute('SELECT vote FROM community_post_likes WHERE post_id=? AND user_id=?', (post['id'], uid)).fetchone()
+                if mv: post['my_vote'] = mv['vote']
+            
+            # Comments
+            post['comments'] = db.execute('''
+                SELECT c.*, u.username, u.avatar, u.is_verified 
+                FROM community_post_comments c JOIN users u ON c.user_id=u.id
+                WHERE c.post_id=? AND c.is_removed=0 ORDER BY c.created DESC
+            ''', (post['id'],)).fetchall()
+            posts.append(post)
+
     sub_count = db.execute('SELECT COUNT(*) FROM subscriptions WHERE channel_id=?', (channel_id,)).fetchone()[0]
     subbed   = bool(uid and db.execute('SELECT 1 FROM subscriptions WHERE subscriber_id=? AND channel_id=?', (uid, channel_id)).fetchone())
     is_owner = (uid == channel_id)
     channel_is_admin = owner['email'] in ADMIN_EMAILS
     return render_template('channel.html', owner=owner, videos=videos,
+                           playlists=playlists, posts=posts, tab=tab,
                            sub_count=sub_count, subbed=subbed,
                            is_owner=is_owner, channel_is_admin=channel_is_admin,
                            ADMIN_EMAILS=ADMIN_EMAILS)
@@ -1059,7 +1419,7 @@ def edit_video(vid_uuid):
         if thumb and thumb.filename and allowed_image(thumb.filename):
             thumb_filename = save_file(thumb, 'thumbnails')
         if visibility == 'scheduled' and scheduled_at_raw:
-            scheduled_at = scheduled_at_raw
+            scheduled_at = scheduled_at_raw.replace('T', ' ')
         else:
             scheduled_at = None
             if visibility == 'scheduled':
@@ -1122,6 +1482,173 @@ def studio_subscribers():
     return jsonify([{'day': r['day'], 'count': r['count']} for r in rows])
 
 
+# ─── Community & Playlists API ────────────────────────────────────────────────
+
+@app.route('/api/community/post', methods=['POST'])
+@login_required
+def create_community_post():
+    body = request.form.get('body', '').strip()
+    ptype = request.form.get('type', 'text')
+    if not body:
+        flash('Post cannot be empty.', 'error')
+        return redirect(url_for('channel', channel_id=session['user_id'], tab='community'))
+    
+    image_filename = None
+    poll_options_json = None
+
+    if ptype == 'image':
+        f = request.files.get('image')
+        if f and f.filename and allowed_image(f.filename):
+            image_filename = save_file(f, 'community')
+    
+    elif ptype == 'poll':
+        opts = request.form.getlist('poll_options')
+        opts = [o.strip() for o in opts if o.strip()]
+        if len(opts) < 2:
+            flash('Poll must have at least 2 options.', 'error')
+            return redirect(url_for('channel', channel_id=session['user_id'], tab='community'))
+        poll_options_json = json.dumps(opts)
+
+    db = get_db()
+    db.execute('INSERT INTO community_posts (user_id, body, image, type, poll_options) VALUES (?,?,?,?,?)',
+               (session['user_id'], body, image_filename, ptype, poll_options_json))
+    db.commit()
+    flash('Posted to community!', 'success')
+    return redirect(url_for('channel', channel_id=session['user_id'], tab='community'))
+
+@app.route('/api/community/vote', methods=['POST'])
+@login_required
+def vote_poll():
+    data = request.json
+    post_id = data.get('post_id')
+    option_idx = data.get('option_idx')
+    db = get_db()
+    # Check if already voted
+    if db.execute('SELECT 1 FROM community_post_votes WHERE user_id=? AND post_id=?', (session['user_id'], post_id)).fetchone():
+        return jsonify({'error': 'Already voted'}), 400
+    db.execute('INSERT INTO community_post_votes (user_id, post_id, option_idx) VALUES (?,?,?)',
+               (session['user_id'], post_id, option_idx))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/community/rate/<int:post_id>', methods=['POST'])
+@login_required
+def rate_community_post(post_id):
+    vote = request.json.get('vote') # 1 or -1
+    if vote not in (1, -1): return jsonify({'error': 'Invalid vote'}), 400
+    db = get_db()
+    uid = session['user_id']
+    
+    existing = db.execute('SELECT vote FROM community_post_likes WHERE user_id=? AND post_id=?', (uid, post_id)).fetchone()
+    if existing:
+        if existing['vote'] == vote:
+            db.execute('DELETE FROM community_post_likes WHERE user_id=? AND post_id=?', (uid, post_id))
+            user_vote = 0
+        else:
+            db.execute('UPDATE community_post_likes SET vote=? WHERE user_id=? AND post_id=?', (vote, uid, post_id))
+            user_vote = vote
+    else:
+        db.execute('INSERT INTO community_post_likes (user_id, post_id, vote) VALUES (?,?,?)', (uid, post_id, vote))
+        user_vote = vote
+        
+        # Notify post owner on like
+        if vote == 1:
+            post = db.execute('SELECT user_id FROM community_posts WHERE id=?', (post_id,)).fetchone()
+            if post and post['user_id'] != uid:
+                u = current_user()
+                msg = f"{u['username']} liked your community post."
+                link = url_for('channel', channel_id=post['user_id'], tab='community')
+                db.execute('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)', (post['user_id'], msg, link))
+
+    db.commit()
+    likes = db.execute('SELECT COUNT(*) FROM community_post_likes WHERE post_id=? AND vote=1', (post_id,)).fetchone()[0]
+    dislikes = db.execute('SELECT COUNT(*) FROM community_post_likes WHERE post_id=? AND vote=-1', (post_id,)).fetchone()[0]
+    return jsonify({'likes': likes, 'dislikes': dislikes, 'user_vote': user_vote})
+
+@app.route('/api/community/comment/<int:post_id>', methods=['POST'])
+@login_required
+def add_community_post_comment(post_id):
+    body = request.json.get('body', '').strip()
+    if not body: return jsonify({'error': 'Empty comment'}), 400
+    db = get_db()
+    db.execute('INSERT INTO community_post_comments (user_id, post_id, body) VALUES (?,?,?)', (session['user_id'], post_id, body))
+    
+    # Notify post owner
+    post = db.execute('SELECT user_id FROM community_posts WHERE id=?', (post_id,)).fetchone()
+    if post and post['user_id'] != session['user_id']:
+        u = current_user()
+        msg = f"{u['username']} commented on your post."
+        link = url_for('channel', channel_id=post['user_id'], tab='community')
+        db.execute('INSERT INTO notifications (user_id, message, link) VALUES (?,?,?)', (post['user_id'], msg, link))
+        
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/community/comment-delete/<int:comment_id>', methods=['POST'])
+@login_required
+def delete_community_post_comment(comment_id):
+    db = get_db()
+    comment = db.execute('SELECT * FROM community_post_comments WHERE id=?', (comment_id,)).fetchone()
+    if not comment: return jsonify({'error': 'Not found'}), 404
+    if comment['user_id'] != session['user_id'] and not is_admin():
+        return jsonify({'error': 'Unauthorized'}), 403
+    db.execute('UPDATE community_post_comments SET is_removed=1 WHERE id=?', (comment_id,))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/community/delete/<int:post_id>', methods=['POST'])
+@login_required
+def delete_community_post(post_id):
+    db = get_db()
+    post = db.execute('SELECT user_id, image FROM community_posts WHERE id=?', (post_id,)).fetchone()
+    if not post: return jsonify({'error': 'Post not found'}), 404
+    if post['user_id'] != session['user_id'] and not is_admin():
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    if post['image']:
+        try: os.remove(os.path.join(UPLOAD_FOLDER, post['image']))
+        except: pass
+        
+    db.execute('DELETE FROM community_post_votes WHERE post_id=?', (post_id,))
+    db.execute('DELETE FROM community_post_likes WHERE post_id=?', (post_id,))
+    db.execute('DELETE FROM community_post_comments WHERE post_id=?', (post_id,))
+    db.execute('DELETE FROM community_posts WHERE id=?', (post_id,))
+    db.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/playlist/create', methods=['POST'])
+@login_required
+def create_playlist():
+    name = request.json.get('name', '').strip()
+    vis  = request.json.get('visibility', 'public')
+    if not name: return jsonify({'error': 'Name required'}), 400
+    db = get_db()
+    cur = db.execute('INSERT INTO playlists (user_id, name, visibility) VALUES (?,?,?)', (session['user_id'], name, vis))
+    db.commit()
+    return jsonify({'success': True, 'id': cur.lastrowid, 'name': name, 'visibility': vis})
+
+@app.route('/api/playlist/<int:playlist_id>/toggle/<vid_uuid>', methods=['POST'])
+@login_required
+def toggle_playlist_video(playlist_id, vid_uuid):
+    db = get_db()
+    uid = session['user_id']
+    # Verify ownership
+    pl = db.execute('SELECT id FROM playlists WHERE id=? AND user_id=?', (playlist_id, uid)).fetchone()
+    if not pl: return jsonify({'error': 'Playlist not found or access denied'}), 403
+    
+    video = db.execute('SELECT id FROM videos WHERE uuid=?', (vid_uuid,)).fetchone()
+    if not video: return jsonify({'error': 'Video not found'}), 404
+    
+    exists = db.execute('SELECT 1 FROM playlist_videos WHERE playlist_id=? AND video_id=?', (playlist_id, video['id'])).fetchone()
+    if exists:
+        db.execute('DELETE FROM playlist_videos WHERE playlist_id=? AND video_id=?', (playlist_id, video['id']))
+        added = False
+    else:
+        db.execute('INSERT INTO playlist_videos (playlist_id, video_id) VALUES (?,?)', (playlist_id, video['id']))
+        added = True
+    db.commit()
+    return jsonify({'added': added})
+
 # ─── Library ──────────────────────────────────────────────────────────────────
 
 @app.route('/library')
@@ -1137,7 +1664,12 @@ def library():
         WHERE sv.user_id=? AND v.is_removed=0
         ORDER BY sv.saved_at DESC
     ''', (session['user_id'],)).fetchall()
-    return render_template('library.html', saved=saved)
+    
+    playlists = db.execute('''
+        SELECT p.*, (SELECT COUNT(*) FROM playlist_videos WHERE playlist_id=p.id) AS video_count
+        FROM playlists p WHERE user_id=? ORDER BY created DESC
+    ''', (session['user_id'],)).fetchall()
+    return render_template('library.html', saved=saved, playlists=playlists)
 
 
 # ─── Subscriptions Feed ───────────────────────────────────────────────────────
@@ -1154,7 +1686,7 @@ def subscriptions_feed():
         JOIN videos v ON s.channel_id = v.user_id
         JOIN users  u ON v.user_id = u.id
         WHERE s.subscriber_id=? AND v.is_removed=0
-          AND (v.visibility="public" OR (v.visibility="scheduled" AND v.scheduled_at <= datetime("now")))
+          AND (v.visibility="public" OR (v.visibility="scheduled" AND datetime(v.scheduled_at) <= datetime("now")))
         ORDER BY v.created DESC
     ''', (uid,)).fetchall()
     return render_template('subscriptions.html', videos=videos)

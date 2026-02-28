@@ -2,10 +2,8 @@
 {% block title %}Admin Panel - FlaskTube{% endblock %}
 {% block content %}
 <div class="admin-layout">
-
   <div class="admin-header">
-    <h1>⚙ Admin Panel</h1>
-    <span class="badge badge-pending">{{ stats.pending_reports }} pending</span>
+    <h1>Admin Panel</h1>
   </div>
 
   <!-- Stats -->
@@ -16,7 +14,7 @@
     </div>
     <div class="stat-card">
       <div class="stat-number">{{ stats.total_videos }}</div>
-      <div class="stat-label">Active Videos</div>
+      <div class="stat-label">Total Videos</div>
     </div>
     <div class="stat-card warn">
       <div class="stat-number">{{ stats.pending_reports }}</div>
@@ -28,88 +26,178 @@
     </div>
   </div>
 
-  <!-- Reports -->
-  <h2 class="admin-section-title">Reports</h2>
+  <!-- User Management -->
+  <div class="admin-section">
+    <h2 class="admin-section-title">User Management</h2>
+    <form method="get" action="{{ url_for('admin') }}" class="search-form" style="max-width: 500px; margin-bottom: 20px;">
+      <input type="text" name="user_q" placeholder="Search users by name, email, or IP..." class="search-input" value="{{ user_q or '' }}">
+      <button type="submit" class="search-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.5 6.5 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      </button>
+    </form>
+    <div class="studio-table-wrap">
+      <table class="studio-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Status</th>
+            <th>Last IP</th>
+            <th>Joined</th>
+            <th style="width: 280px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="studio-row" {% if u.email in ADMIN_EMAILS %}style="background: rgba(255,0,0,0.05);"{% endif %}>
+            <td class="studio-video-cell" style="min-width: 200px;">
+              <a href="{{ url_for('channel', channel_id=u.id) }}">
+                {% if u.avatar %}
+                  <img src="{{ url_for('uploaded_file', filename=u.avatar) }}" class="avatar-md">
+                {% else %}
+                  <div class="avatar-md avatar-placeholder">{{ (u.channel_name or u.username)[0].upper() }}</div>
+                {% endif %}
+              </a>
+              <div class="studio-video-info">
+                <a href="{{ url_for('channel', channel_id=u.id) }}" class="studio-video-title">{{ u.channel_name or u.username }}</a>
+                <p class="studio-video-desc" style="max-width: 200px;">{{ u.email }}</p>
+              </div>
+            </td>
+            <td>
+              {% if u.is_verified %}<span class="badge" style="background:var(--blue);color:#fff;border:none">Verified</span>{% endif %}
+              {% if u.email in ADMIN_EMAILS %}<span class="admin-channel-badge">Admin</span>{% endif %}
+            </td>
+            <td class="studio-num">{{ u.last_ip or 'N/A' }}</td>
+            <td class="studio-date">{{ time_ago(u.created) }}</td>
+            <td class="studio-actions-cell">
+              {% if u.email not in ADMIN_EMAILS %}
+                <button class="btn btn-neutral" onclick="openMessageModal({{ u.id }}, '{{ u.username }}')">Message</button>
+                {% if u.is_verified %}
+                  <form action="{{ url_for('admin_unverify_user', user_id=u.id) }}" method="post" style="display:inline">
+                    <button type="submit" class="btn btn-neutral">Un-verify</button>
+                  </form>
+                {% else %}
+                  <form action="{{ url_for('admin_verify_user', user_id=u.id) }}" method="post" style="display:inline">
+                    <button type="submit" class="btn btn-success">Verify</button>
+                  </form>
+                {% endif %}
+                <button class="btn btn-danger" onclick="openBanModal({{ u.id }}, '{{ u.username }}')">Ban</button>
+              {% else %}
+                <span style="color:var(--text2); font-size:13px;">Admin User</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-  {% if reports %}
+  <!-- Reports Section -->
+  <div class="admin-section" style="margin-top: 40px;">
+    <h2 class="admin-section-title">Content Reports</h2>
     {% for r in reports %}
-    <div class="report-card {% if r.status != 'pending' %}resolved{% endif %}">
+    <div class="report-card {{ r.status }}">
       <div class="report-meta">
-        <span>#{{ r.id }}</span> &nbsp;·&nbsp;
-        Reported by <span>{{ r.reporter_name or 'Anonymous' }}</span> &nbsp;·&nbsp;
-        {{ time_ago(r.created) }} &nbsp;·&nbsp;
-        <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        Report #{{ r.id }} · <span>{{ time_ago(r.created) }}</span> · Status: <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        {% if r.reporter_name %}· By: <span>{{ r.reporter_name }}</span>{% endif %}
       </div>
-
-      <div class="report-reason">
-        <strong>Reason:</strong> {{ r.reason }}
-      </div>
-
-      <!-- Video report -->
+      <div class="report-reason"><strong>Reason:</strong> {{ r.reason }}</div>
+      
       {% if r.video_uuid %}
       <div class="report-content">
-        {% if r.video_removed %}
-          <span style="color:var(--red)">🗑 Video already removed</span> —
-          <em>{{ r.video_title }}</em>
-        {% else %}
-          📹 Video: <a href="{{ url_for('watch', vid_uuid=r.video_uuid) }}" target="_blank">{{ r.video_title }}</a>
-        {% endif %}
+        <strong>Video:</strong> <a href="{{ url_for('watch', vid_uuid=r.video_uuid) }}" target="_blank">{{ r.video_title }}</a>
+        {% if r.video_removed %}<span style="color:var(--red)">(Removed)</span>{% endif %}
       </div>
-      {% endif %}
-
-      <!-- Comment report -->
-      {% if r.comment_body %}
+      {% elif r.comment_id %}
       <div class="report-content">
-        {% if r.comment_removed %}
-          <span style="color:var(--red)">🗑 Comment already removed</span>
-        {% else %}
-          💬 Comment by <strong>{{ r.commenter_name }}</strong>:
-          "{{ r.comment_body | truncate(120) }}"
-        {% endif %}
+        <strong>Comment by {{ r.commenter_name }}:</strong> "{{ r.comment_body }}"
+        {% if r.comment_removed %}<span style="color:var(--red)">(Removed)</span>{% endif %}
       </div>
       {% endif %}
 
-      <!-- Actions -->
       {% if r.status == 'pending' %}
       <div class="report-actions">
-        {% if r.video_uuid and not r.video_removed %}
-        <form method="post" action="{{ url_for('admin_remove_video', vid_uuid=r.video_uuid) }}" style="display:inline">
-          <button class="btn btn-danger">🗑 Remove Video</button>
-        </form>
+        {% if r.video_uuid %}
+          <form action="{{ url_for('admin_remove_video', vid_uuid=r.video_uuid) }}" method="post" style="display:inline"><button class="btn btn-danger">Remove Video</button></form>
+        {% elif r.comment_id %}
+          <form action="{{ url_for('admin_remove_comment', comment_id=r.comment_id) }}" method="post" style="display:inline"><button class="btn btn-danger">Remove Comment</button></form>
         {% endif %}
-        {% if r.video_uuid and r.video_removed %}
-        <form method="post" action="{{ url_for('admin_restore_video', vid_uuid=r.video_uuid) }}" style="display:inline">
-          <button class="btn btn-success">↩ Restore Video</button>
-        </form>
-        {% endif %}
-        {% if r.comment_id and not r.comment_removed %}
-        <form method="post" action="{{ url_for('admin_remove_comment', comment_id=r.comment_id) }}" style="display:inline">
-          <button class="btn btn-danger">🗑 Remove Comment</button>
-        </form>
-        {% endif %}
-        {% if r.reporter_id and r.video_id %}
-        <form method="post" action="{{ url_for('admin_ban_user', user_id=r.reporter_id) }}"
-              style="display:inline"
-              onsubmit="return confirm('Ban this user and remove ALL their content?')">
-          <button class="btn btn-neutral" style="color:var(--red)">🚫 Ban Uploader</button>
-        </form>
-        {% endif %}
-        <form method="post" action="{{ url_for('admin_dismiss_report', report_id=r.id) }}" style="display:inline">
-          <button class="btn btn-neutral">✓ Dismiss</button>
-        </form>
-      </div>
-      {% else %}
-      <div style="font-size:13px;color:var(--text2);margin-top:8px">
-        {% if r.status == 'resolved' %}✅ Resolved{% else %}✓ Dismissed{% endif %}
+        <form action="{{ url_for('admin_dismiss_report', report_id=r.id) }}" method="post" style="display:inline"><button class="btn btn-neutral">Dismiss Report</button></form>
       </div>
       {% endif %}
     </div>
+    {% else %}
+      <div class="no-reports">No reports found.</div>
     {% endfor %}
-  {% else %}
-    <div class="no-reports">
-      ✅ No reports yet — your community is clean!
-    </div>
-  {% endif %}
+  </div>
 
 </div>
+
+<!-- Modals -->
+<div class="modal-backdrop" id="ban-user-modal" style="display:none">
+  <div class="modal">
+    <button class="modal-close" onclick="closeBanModal()">✕</button>
+    <h3>Ban User & IP</h3>
+    <p style="color:var(--text2);font-size:14px;margin:12px 0 24px;line-height:1.5">
+      Are you sure you want to permanently delete user <strong id="ban-username" style="color:var(--text)"></strong> and ban their last known IP address? This action cannot be undone.
+    </p>
+    <form id="ban-user-form" method="post" style="display:flex;flex-direction:column;gap:16px">
+      <textarea name="reason" class="form-input" rows="2" placeholder="Reason for ban (optional, stored with IP)"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" onclick="closeBanModal()">Cancel</button>
+        <button type="submit" class="modal-btn modal-btn-submit">Confirm Ban</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="message-user-modal" style="display:none">
+  <div class="modal">
+    <button class="modal-close" onclick="closeMessageModal()">✕</button>
+    <h3>Send Notification</h3>
+    <p style="color:var(--text2);font-size:14px;margin:12px 0 24px;line-height:1.5">
+      This will send a notification to <strong id="message-username" style="color:var(--text)"></strong>.
+    </p>
+    <form id="message-user-form" method="post" style="display:flex;flex-direction:column;gap:16px">
+      <textarea name="message" class="form-input" rows="4" placeholder="Your message..." required></textarea>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-cancel" onclick="closeMessageModal()">Cancel</button>
+        <button type="submit" class="modal-btn modal-btn-submit" style="background:var(--blue)">Send</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Ban Modal
+let banUserId = null;
+function openBanModal(userId, username) {
+  banUserId = userId;
+  document.getElementById('ban-user-modal').style.display = 'flex';
+  document.getElementById('ban-username').textContent = username;
+  document.getElementById('ban-user-form').action = '/admin/ban-user/' + userId;
+}
+function closeBanModal() {
+  document.getElementById('ban-user-modal').style.display = 'none';
+}
+
+// Message Modal
+let messageUserId = null;
+function openMessageModal(userId, username) {
+  messageUserId = userId;
+  document.getElementById('message-user-modal').style.display = 'flex';
+  document.getElementById('message-username').textContent = username;
+  document.getElementById('message-user-form').action = '/admin/message-user/' + userId;
+  document.querySelector('#message-user-form textarea').value = '';
+}
+function closeMessageModal() {
+  document.getElementById('message-user-modal').style.display = 'none';
+}
+
+// Close modals on backdrop click
+window.addEventListener('click', e => {
+  if (e.target.id === 'ban-user-modal') closeBanModal();
+  if (e.target.id === 'message-user-modal') closeMessageModal();
+});
+</script>
 {% endblock %}

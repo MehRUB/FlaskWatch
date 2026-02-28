@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}{{ q }} - FlaskTube Search{% endblock %}
+{% block content %}
+<h2 class="page-title">Search results for "{{ q }}"</h2>
+
+{% if channels %}
+<div class="search-section">
+  <h3 class="section-title">Channels</h3>
+  {% for c in channels %}
+  <div class="search-channel-card">
+    <a href="{{ url_for('channel', channel_id=c.id) }}" class="search-channel-link">
+      {% if c.avatar %}
+        <img src="{{ url_for('uploaded_file', filename=c.avatar) }}" class="avatar-lg" style="width:100px;height:100px">
+      {% else %}
+        <div class="avatar-lg avatar-placeholder" style="width:100px;height:100px;font-size:40px">{{ (c.channel_name or c.username)[0].upper() }}</div>
+      {% endif %}
+      <div class="search-channel-info">
+        <div class="search-channel-name">
+          {{ c.channel_name or c.username }}
+          {% if c.is_verified %}<span class="verify-badge">✓</span>{% endif %}
+        </div>
+        <div class="search-channel-meta">@{{ c.username }} • {{ fmt_views(sub_counts.get(c.id, 0)) }} subscribers</div>
+        <div class="search-channel-bio">{{ c.bio or '' }}</div>
+      </div>
+    </a>
+    {% if session.user_id and session.user_id != c.id %}
+      <button class="sub-btn {{ 'subbed' if c.id in my_subs else '' }}" 
+              onclick="toggleSub({{ c.id }})" id="sub-btn-{{ c.id }}">
+        {{ 'Subscribed' if c.id in my_subs else 'Subscribe' }}
+      </button>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<hr style="border:0; border-top:1px solid var(--border); margin: 24px 0;">
+{% endif %}
+
+<h3 class="section-title">Videos</h3>
+{% if videos %}
+<div class="video-grid">
+  {% for v in videos %}
+  <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="video-card">
+    <div class="video-thumb">
+      {% if v.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" alt="{{ v.title }}">
+      {% else %}
+        <div class="thumb-placeholder">
+          <svg viewBox="0 0 24 24" fill="#aaa" width="48" height="48"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      {% endif %}
+    </div>
+    <div class="video-info">
+      <div class="video-title">{{ v.title }}</div>
+      <div class="video-meta">{{ v.channel_name or v.username }} {% if v.is_verified %}<span class="verify-badge">✓</span>{% endif %}</div>
+      <div class="video-meta">{{ fmt_views(v.views) }} views · {{ time_ago(v.created) }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p style="color:var(--text2)">No videos found.</p>
+{% endif %}
+
+<script>
+async function toggleSub(channelId) {
+  const r = await fetch(`/api/subscribe/${channelId}`, {method:'POST'});
+  if (r.status===401) { location='/login'; return; }
+  const d = await r.json();
+  const btn = document.getElementById('sub-btn-' + channelId);
+  if(btn) {
+    btn.classList.toggle('subbed', d.subbed);
+    btn.textContent = d.subbed ? 'Subscribed' : 'Subscribe';
+  }
+}
+</script>
+{% endblock %}

@@ -5,8 +5,8 @@
 <div class="history-header">
   <h1 class="page-title" style="margin-bottom:0">Watch History</h1>
   {% if items %}
-  <form action="{{ url_for('clear_history') }}" method="post" onsubmit="return confirm('Clear all watch history? This cannot be undone.');">
-    <button type="submit" class="clear-history-btn">
+  <form id="clear-history-form" action="{{ url_for('clear_history') }}" method="post">
+    <button type="button" class="clear-history-btn" onclick="openClearHistoryModal()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       Clear all watch history
     </button>
@@ -47,4 +47,24 @@
   <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
 </div>
 {% endif %}
+
+<!-- Clear History Modal -->
+<div class="modal-backdrop" id="clear-history-modal" style="display:none">
+  <div class="modal">
+    <h3>Clear watch history?</h3>
+    <p style="color:var(--text2);font-size:14px;margin:8px 0 24px">
+      This will remove all videos from your watch history. This cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeClearHistoryModal()">Cancel</button>
+      <button class="modal-btn modal-btn-submit" onclick="document.getElementById('clear-history-form').submit()">Clear History</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openClearHistoryModal() { document.getElementById('clear-history-modal').style.display = 'flex'; }
+function closeClearHistoryModal() { document.getElementById('clear-history-modal').style.display = 'none'; }
+window.addEventListener('click', e => { if(e.target === document.getElementById('clear-history-modal')) closeClearHistoryModal(); });
+</script>
 {% endblock %}

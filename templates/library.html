@@ -38,6 +38,29 @@
   <a href="{{ url_for('index') }}" class="signin-btn">Browse videos</a>
 </div>
 {% endif %}
+
+<h3 class="page-title" style="margin:32px 0 16px">My Playlists</h3>
+{% if playlists %}
+<div class="video-grid">
+  {% for p in playlists %}
+  <a href="{{ url_for('playlist', playlist_id=p.id) }}" class="video-card">
+    <div class="video-thumb">
+      <div class="thumb-placeholder" style="background:var(--bg3)">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--text2)"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/></svg>
+      </div>
+      <div style="position:absolute;bottom:0;right:0;background:rgba(0,0,0,0.8);color:#fff;padding:2px 6px;font-size:12px;border-top-left-radius:6px">
+        {{ p.video_count }} videos
+      </div>
+    </div>
+    <div class="video-info">
+      <div class="video-title">{{ p.name }}</div>
+      <div class="video-meta">{{ p.visibility|capitalize }} · Updated {{ time_ago(p.created) }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Create Playlist Modal -->
 <div class="modal-backdrop" id="playlist-modal">
   <div class="modal">
@@ -76,16 +99,23 @@ function openPlaylistModal() {
 function closePlaylistModal() {
   document.getElementById('playlist-modal').style.display = 'none';
 }
-function submitPlaylist() {
+async function submitPlaylist() {
   const name = document.getElementById('playlist-name').value.trim();
   const vis  = document.getElementById('playlist-visibility').value;
   if (!name) {
     showToast('Please enter a playlist name.');
     return;
   }
-  // Placeholder behavior until backend is implemented.
-  closePlaylistModal();
-  showToast(`Playlist "${name}" (${vis}) will be created soon.`);
+  
+  const r = await fetch('/api/playlist/create', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, visibility: vis})
+  });
+  if (r.ok) {
+    window.location.reload();
+  } else {
+    showToast('Failed to create playlist');
+  }
 }
 </script>
 {% endblock %}

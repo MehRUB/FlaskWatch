@@ -165,3 +165,145 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
 });
+
+// ── Community Posts ───────────────────────────────────────────────────────────
+function togglePostType(radio) {
+  // Update UI tabs
+  document.querySelectorAll('.post-type-btn').forEach(btn => btn.classList.remove('active'));
+  radio.closest('.post-type-btn').classList.add('active');
+
+  const pollFields = document.getElementById('poll-fields');
+  const imgSection = document.getElementById('image-upload-section');
+  
+  if (radio.value === 'poll') {
+    pollFields.style.display = 'block';
+    imgSection.style.display = 'none';
+  } else if (radio.value === 'image') {
+    pollFields.style.display = 'none';
+    imgSection.style.display = 'block';
+  } else {
+    pollFields.style.display = 'none';
+    imgSection.style.display = 'none';
+  }
+}
+
+function previewPostImage(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('image-preview-img').src = e.target.result;
+      document.getElementById('image-preview-box').style.display = 'inline-block';
+      document.querySelector('.image-upload-area').style.display = 'none';
+    }
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+function clearPostImage() {
+  document.getElementById('post-image-input').value = '';
+  document.getElementById('image-preview-box').style.display = 'none';
+  document.querySelector('.image-upload-area').style.display = 'block';
+}
+
+function addPollOption() {
+  const container = document.getElementById('poll-options-container');
+  const count = container.children.length + 1;
+  const div = document.createElement('div');
+  div.className = 'poll-option-row';
+  div.innerHTML = `
+    <input type="text" name="poll_options" class="form-input" placeholder="Option ${count}">
+    <button type="button" class="poll-delete-btn" onclick="removePollOption(this)" title="Remove option">✕</button>
+  `;
+  container.appendChild(div);
+}
+
+function removePollOption(btn) {
+  const container = document.getElementById('poll-options-container');
+  if (container.children.length <= 2) {
+    showToast('Poll must have at least 2 options');
+    return;
+  }
+  btn.closest('.poll-option-row').remove();
+  // Re-index placeholders
+  Array.from(container.children).forEach((row, idx) => {
+    row.querySelector('input').placeholder = 'Option ' + (idx + 1);
+  });
+}
+
+async function votePoll(postId, optionIdx) {
+  const r = await fetch('/api/community/vote', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({post_id:postId, option_idx:optionIdx}) });
+  if (r.ok) window.location.reload();
+}
+
+// ── Delete Post ───────────────────────────────────────────────────────────────
+let deletePostId = null;
+function openDeletePostModal(id) {
+  deletePostId = id;
+  document.getElementById('delete-post-modal').style.display = 'flex';
+}
+function closeDeletePostModal() {
+  document.getElementById('delete-post-modal').style.display = 'none';
+  deletePostId = null;
+}
+async function confirmDeletePost() {
+  if (!deletePostId) return;
+  const r = await fetch(`/api/community/delete/${deletePostId}`, { method:'POST' });
+  if (r.ok) {
+    window.location.reload();
+  } else {
+    showToast('Failed to delete post');
+    closeDeletePostModal();
+  }
+}
+
+// ── Post Interactions ─────────────────────────────────────────────────────────
+async function ratePost(postId, vote, btn) {
+  const r = await fetch(`/api/community/rate/${postId}`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({vote})
+  });
+  if (r.status === 401) { window.location = '/login'; return; }
+  const d = await r.json();
+  
+  const bar = btn.closest('.post-actions-bar');
+  const [upBtn, downBtn] = bar.querySelectorAll('.post-action-btn');
+  
+  upBtn.classList.toggle('active', d.user_vote === 1);
+  downBtn.classList.toggle('active', d.user_vote === -1);
+  upBtn.querySelector('.count').textContent = d.likes;
+  downBtn.querySelector('.count').textContent = d.dislikes;
+}
+
+function togglePostComments(postId) {
+  const sec = document.getElementById(`post-comments-${postId}`);
+  sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitPostComment(postId) {
+  const inp = document.getElementById(`post-input-${postId}`);
+  const body = inp.value.trim();
+  if (!body) return;
+  const r = await fetch(`/api/community/comment/${postId}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({body}) });
+  if (r.ok) window.location.reload();
+}
+
+let deletePostCommentId = null;
+function openDeletePostCommentModal(commentId) {
+  deletePostCommentId = commentId;
+  document.getElementById('delete-post-comment-modal').style.display = 'flex';
+}
+function closeDeletePostCommentModal() {
+  document.getElementById('delete-post-comment-modal').style.display = 'none';
+  deletePostCommentId = null;
+}
+async function confirmDeletePostComment() {
+  if (!deletePostCommentId) return;
+  const r = await fetch(`/api/community/comment-delete/${deletePostCommentId}`, { method:'POST' });
+  if (r.ok) {
+    document.getElementById(`post-comment-${deletePostCommentId}`).remove();
+    closeDeletePostCommentModal();
+  } else {
+    showToast('Failed to delete comment');
+    closeDeletePostCommentModal();
+  }
+}
