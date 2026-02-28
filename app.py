@@ -145,7 +145,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS community_posts (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL REFERENCES users(id),
-            body       TEXT    NOT NULL,
+            content    TEXT    NOT NULL,
             image      TEXT    DEFAULT NULL,
             created    TEXT    DEFAULT (datetime('now'))
         );
@@ -203,9 +203,7 @@ def init_db():
         ('videos',        'tags',          "TEXT DEFAULT ''"),
         ('community_posts', 'type',        "TEXT DEFAULT 'text'"),
         ('community_posts', 'poll_options',"TEXT DEFAULT NULL"),
-        ('users',         'last_ip',       'TEXT'),
-        ('community_posts', 'body',        "TEXT DEFAULT ''"),
-        ('community_posts', 'image',       "TEXT DEFAULT NULL"),
+        ('users',         'last_ip',       'TEXT')
     ]
     for table, col, defn in migrations:
         try: db.execute(f'ALTER TABLE {table} ADD COLUMN {col} {defn}')
@@ -1512,7 +1510,7 @@ def create_community_post():
         poll_options_json = json.dumps(opts)
 
     db = get_db()
-    db.execute('INSERT INTO community_posts (user_id, body, image, type, poll_options) VALUES (?,?,?,?,?)',
+    db.execute('INSERT INTO community_posts (user_id, content, image, type, poll_options) VALUES (?,?,?,?,?)',
                (session['user_id'], body, image_filename, ptype, poll_options_json))
     db.commit()
     flash('Posted to community!', 'success')

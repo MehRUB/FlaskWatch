@@ -173,7 +173,7 @@
           </div>
           {% endif %}
         </div>
-        <div class="post-body">{{ post.body }}</div>
+        <div class="post-body">{{ post.content }}</div>
         {% if post.image %}
           <img src="{{ url_for('uploaded_file', filename=post.image) }}" class="post-image">
         {% endif %}
