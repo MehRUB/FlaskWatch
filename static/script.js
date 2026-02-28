@@ -244,22 +244,89 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Custom file input handler for edit page
+  const thumbUploadInput = document.getElementById('thumbnail');
+  if (thumbUploadInput) {
+    thumbUploadInput.addEventListener('change', e => {
+      const fileName = e.target.files[0] ? e.target.files[0].name : '';
+      
+      const nameDisplay = document.getElementById('thumb-filename');
+      if (nameDisplay) nameDisplay.textContent = fileName;
+
+      const oldLabel = e.target.nextElementSibling?.querySelector('.form-file-text');
+      if (oldLabel) oldLabel.textContent = fileName || 'Choose a file...';
+    });
+  }
+
+  // Thumbnail generator for edit_video.html
+  const genBtnEdit = document.getElementById('generate-thumb-btn');
+  if (genBtnEdit) {
+    const thumbInput = document.getElementById('thumbnail');
+    const grid = document.getElementById('generated-thumbs-grid-edit');
+    const videoUrl = genBtnEdit.dataset.videoUrl;
+
+    genBtnEdit.addEventListener('click', async () => {
+      genBtnEdit.disabled = true;
+      genBtnEdit.textContent = 'Generating...';
+      grid.innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner" style="width:24px;height:24px;border-width:2px;display:inline-block;"></div></div>';
+
+      try {
+        const blobs = await generateVideoFrames(videoUrl, 3);
+        grid.innerHTML = '';
+        blobs.forEach(blob => {
+          const img = document.createElement('img');
+          img.src = URL.createObjectURL(blob);
+          img.className = 'generated-thumb';
+          img.onclick = () => {
+            grid.querySelectorAll('.generated-thumb').forEach(el => el.classList.remove('selected'));
+            img.classList.add('selected');
+            
+            const file = new File([blob], 'thumb.jpg', { type: 'image/jpeg' });
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            thumbInput.files = dataTransfer.files;
+
+            const nameDisplay = document.getElementById('thumb-filename');
+            if (nameDisplay) nameDisplay.textContent = 'thumb.jpg (from video)';
+            const oldLabel = document.querySelector('.form-file-text');
+            if (oldLabel) oldLabel.textContent = 'thumb.jpg (from video)';
+          };
+          grid.appendChild(img);
+        });
+      } catch (err) {
+        console.error(err);
+        grid.innerHTML = '<p style="color:var(--red);text-align:center;padding:20px;">Error generating frames.</p>';
+      } finally {
+        genBtnEdit.disabled = false;
+        genBtnEdit.textContent = 'Generate from video';
+      }
+    });
+  }
 });
 
-async function generateVideoFrames(file, count) {
+async function generateVideoFrames(source, count) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
-    video.src = URL.createObjectURL(file);
     video.muted = true;
     video.playsInline = true;
+    video.crossOrigin = 'anonymous';
+    
+    let isUrl = false;
+    if (source instanceof File) {
+      video.src = URL.createObjectURL(source);
+    } else {
+      video.src = source;
+      isUrl = true;
+    }
     
     video.onloadedmetadata = async () => {
       const duration = video.duration;
       const blobs = [];
       
       for (let i = 0; i < count; i++) {
-        const time = Math.random() * (duration - 1); // Random time
+        const time = Math.random() * (duration * 0.9);
         video.currentTime = Math.max(0, Math.min(duration, time));
         
         await new Promise(r => {
@@ -272,10 +339,13 @@ async function generateVideoFrames(file, count) {
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
         blobs.push(await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)));
       }
-      URL.revokeObjectURL(video.src);
+      if (!isUrl) URL.revokeObjectURL(video.src);
       resolve(blobs);
     };
-    video.onerror = reject;
+    video.onerror = (e) => {
+      if (!isUrl) URL.revokeObjectURL(video.src);
+      reject(e);
+    };
   });
 }
 
@@ -397,5 +467,67 @@ async function confirmDeletePostComment() {
   } else {
     showToast('Failed to delete comment');
     closeDeletePostCommentModal();
+  }
+}
+
+// ── Studio Thumbnail Generator ────────────────────────────────────────────────
+let currentThumbUuid = null;
+let selectedThumbBlob = null;
+
+function openThumbModal(uuid, videoUrl) {
+  currentThumbUuid = uuid;
+  selectedThumbBlob = null;
+  const modal = document.getElementById('thumb-modal');
+  const grid = document.getElementById('thumb-gen-grid');
+  
+  grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text2)"><div class="spinner" style="width:24px;height:24px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:10px"></div> Generating frames...</div>';
+  modal.style.display = 'flex';
+  
+  generateVideoFrames(videoUrl, 3).then(blobs => {
+    grid.innerHTML = '';
+    blobs.forEach((blob, i) => {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(blob);
+      img.className = 'generated-thumb';
+      if (i === 0) { img.classList.add('selected'); selectedThumbBlob = blob; }
+      img.onclick = () => {
+        document.querySelectorAll('#thumb-gen-grid .generated-thumb').forEach(e => e.classList.remove('selected'));
+        img.classList.add('selected');
+        selectedThumbBlob = blob;
+      };
+      grid.appendChild(img);
+    });
+  }).catch(err => {
+    grid.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">Error generating frames.</div>';
+    console.error(err);
+  });
+}
+
+function closeThumbModal() {
+  document.getElementById('thumb-modal').style.display = 'none';
+}
+
+async function saveGeneratedThumb() {
+  if (!currentThumbUuid || !selectedThumbBlob) return;
+  
+  const formData = new FormData();
+  formData.append('thumbnail', selectedThumbBlob, 'thumb.jpg');
+  
+  const btn = document.querySelector('#thumb-modal .modal-btn-submit');
+  const origText = btn.textContent;
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  
+  const r = await fetch(`/api/studio/video/${currentThumbUuid}/thumbnail`, { method: 'POST', body: formData });
+  const d = await r.json();
+  btn.textContent = origText; btn.disabled = false;
+  
+  if (r.ok) {
+    showToast('Thumbnail updated!');
+    const img = document.querySelector(`img[data-uuid="${currentThumbUuid}"]`);
+    if (img) img.src = d.thumbnail_url;
+    else window.location.reload();
+    closeThumbModal();
+  } else {
+    showToast(d.error || 'Failed to save');
   }
 }

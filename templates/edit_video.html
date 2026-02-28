@@ -31,9 +31,17 @@
         <p class="field-hint">No thumbnail set.</p>
       {% endif %}
       
-      <label for="thumbnail">Upload New Thumbnail</label>
-      <input type="file" name="thumbnail" id="thumbnail" class="form-input" accept="image/*">
-      
+      <label>Upload New Thumbnail</label>
+      <div class="upload-zone">
+        <input type="file" name="thumbnail" id="thumbnail" class="upload-zone-input" accept="image/*">
+        <div class="upload-zone-content">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--text2)"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z"/></svg>
+          <p class="upload-zone-text">Click to upload or drag and drop</p>
+          <p class="upload-zone-hint">SVG, PNG, JPG or GIF (max. 2MB)</p>
+          <p class="upload-zone-filename" id="thumb-filename"></p>
+        </div>
+      </div>
+
       <div id="thumbnail-generator-edit" style="margin-top: 16px;">
         <button type="button" id="generate-thumb-btn" class="btn btn-neutral" data-video-url="{{ url_for('uploaded_file', filename=video.filename) }}">
           Generate from video

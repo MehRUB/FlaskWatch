@@ -82,7 +82,7 @@
             <td class="studio-video-cell">
               <a href="{{ url_for('watch', vid_uuid=v.uuid) }}" class="studio-thumb-link">
                 {% if v.thumbnail %}
-                  <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" class="studio-thumb" alt="">
+                  <img src="{{ url_for('uploaded_file', filename=v.thumbnail) }}" class="studio-thumb" data-uuid="{{ v.uuid }}" alt="">
                 {% else %}
                   <div class="studio-thumb studio-thumb-placeholder">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="var(--text2)"><path d="M8 5v14l11-7z"/></svg>
@@ -117,6 +117,10 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
                 Edit
               </a>
+              <button class="studio-action-btn" onclick="openThumbModal('{{ v.uuid }}', '{{ url_for('uploaded_file', filename=v.filename) }}')" title="Generate Thumbnail">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                Gen
+              </button>
               <button class="studio-action-btn studio-delete-btn"
                       onclick="confirmDelete('{{ v.uuid }}', '{{ v.title|replace("'","\\'")|replace('"','&quot;') }}')"
                       title="Delete">
@@ -152,6 +156,21 @@
         <button type="submit" class="modal-btn modal-btn-submit">Yes, delete</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Generate Thumbnail Modal -->
+<div class="modal-backdrop" id="thumb-modal" style="display:none">
+  <div class="modal" style="max-width: 600px;">
+    <h3>✨ Generate Thumbnail</h3>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:16px">Select a frame from your video to use as the thumbnail.</p>
+    <div id="thumb-gen-container">
+       <div class="generated-thumbs-grid" id="thumb-gen-grid"></div>
+    </div>
+    <div class="modal-actions">
+       <button class="modal-btn modal-btn-cancel" onclick="closeThumbModal()">Cancel</button>
+       <button class="modal-btn modal-btn-submit" onclick="saveGeneratedThumb()">Save</button>
+    </div>
   </div>
 </div>
 

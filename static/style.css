@@ -633,6 +633,55 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
 .submit-btn:disabled { background: var(--bg3); color: var(--text2); cursor: not-allowed; }
 .upload-form .submit-btn { width: auto; padding: 12px 32px; }
 
+/* Custom File Input */
+.form-file-wrapper {
+  position: relative;
+}
+.form-file-input {
+  width: 0.1px;
+  height: 0.1px;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  z-index: -1;
+}
+.form-file-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.form-file-label:hover {
+  border-color: var(--blue);
+  color: var(--text);
+}
+.form-file-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Upload Zone */
+.upload-zone {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  background: var(--bg2);
+}
+.upload-zone:hover { border-color: var(--blue); background: rgba(62,166,255,0.04); }
+.upload-zone-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
+.upload-zone-content { pointer-events: none; position: relative; z-index: 1; }
+.upload-zone-text { font-weight: 500; margin-top: 12px; color: var(--text); font-size: 14px; }
+.upload-zone-hint { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.upload-zone-filename { font-size: 13px; color: var(--blue); margin-top: 8px; font-weight: 500; min-height: 20px; }
+
 /* ── Edit Channel ─────────────────────────────────────────── */
 .edit-channel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
 .back-link { font-size: 14px; color: var(--blue); }
@@ -766,6 +815,9 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
 .badge-pending  { background: #2a1f00; color: var(--orange); border: 1px solid var(--orange); }
 .badge-resolved { background: #0e3a1a; color: var(--green);  border: 1px solid var(--green); }
 .badge-dismissed{ background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+.badge-success { background: #0e3a1a; color: var(--green);  border: 1px solid var(--green); }
+.badge-muted   { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+.badge-accent  { background: #0e1e3a; color: var(--blue); border: 1px solid var(--blue); }
 .no-reports { text-align: center; padding: 60px; color: var(--text2); font-size: 16px; }
 
 /* ── Responsive ───────────────────────────────────────────── */

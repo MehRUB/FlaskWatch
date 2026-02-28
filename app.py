@@ -199,7 +199,7 @@ def init_db():
         ('comments',      'parent_id',     'INTEGER REFERENCES comments(id)'),
         ('comments',      'is_pinned',     'INTEGER DEFAULT 0'),
         ('comments',      'is_removed',    'INTEGER DEFAULT 0'),
-        ('subscriptions', 'created',       'TEXT DEFAULT (datetime(''now''))'),
+        ('subscriptions', 'created',       "TEXT DEFAULT (datetime('now'))"),
         ('videos',        'tags',          "TEXT DEFAULT ''"),
         ('community_posts', 'type',        "TEXT DEFAULT 'text'"),
         ('community_posts', 'poll_options',"TEXT DEFAULT NULL"),
@@ -323,7 +323,9 @@ def notify_subscribers(channel_id, message, link):
 
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    response = send_from_directory(UPLOAD_FOLDER, filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -1416,8 +1418,18 @@ def edit_video(vid_uuid):
             return redirect(url_for('edit_video', vid_uuid=vid_uuid))
         thumb = request.files.get('thumbnail')
         thumb_filename = video['thumbnail']
-        if thumb and thumb.filename and allowed_image(thumb.filename):
-            thumb_filename = save_file(thumb, 'thumbnails')
+        if thumb and thumb.filename:
+            if allowed_image(thumb.filename):
+                new_thumb = save_file(thumb, 'thumbnails')
+                if GOOGLE_VISION_KEY and scan_image_for_explicit_content(os.path.join(UPLOAD_FOLDER, new_thumb)):
+                    try: os.remove(os.path.join(UPLOAD_FOLDER, new_thumb))
+                    except: pass
+                    flash('Thumbnail rejected due to inappropriate content.', 'error')
+                    return redirect(url_for('edit_video', vid_uuid=vid_uuid))
+                thumb_filename = new_thumb
+            else:
+                flash('Invalid thumbnail format. Use JPG, PNG, GIF, or WEBP.', 'error')
+                return redirect(url_for('edit_video', vid_uuid=vid_uuid))
         if visibility == 'scheduled' and scheduled_at_raw:
             scheduled_at = scheduled_at_raw.replace('T', ' ')
         else:
@@ -1480,6 +1492,32 @@ def studio_subscribers():
         ORDER BY day
     ''', (uid,)).fetchall()
     return jsonify([{'day': r['day'], 'count': r['count']} for r in rows])
+
+
+@app.route('/api/studio/video/<vid_uuid>/thumbnail', methods=['POST'])
+@login_required
+def api_update_thumbnail(vid_uuid):
+    db = get_db()
+    uid = session['user_id']
+    video = db.execute('SELECT id FROM videos WHERE uuid=? AND user_id=? AND is_removed=0', (vid_uuid, uid)).fetchone()
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+    
+    thumb = request.files.get('thumbnail')
+    if not thumb or not allowed_image(thumb.filename):
+        return jsonify({'error': 'Invalid file'}), 400
+
+    new_thumb = save_file(thumb, 'thumbnails')
+    
+    if GOOGLE_VISION_KEY and scan_image_for_explicit_content(os.path.join(UPLOAD_FOLDER, new_thumb)):
+        try: os.remove(os.path.join(UPLOAD_FOLDER, new_thumb))
+        except: pass
+        return jsonify({'error': 'Thumbnail rejected due to content policy'}), 400
+
+    db.execute('UPDATE videos SET thumbnail=? WHERE id=?', (new_thumb, video['id']))
+    db.commit()
+    
+    return jsonify({'success': True, 'thumbnail_url': url_for('uploaded_file', filename=new_thumb)})
 
 
 # ─── Community & Playlists API ────────────────────────────────────────────────
