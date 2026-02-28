@@ -1442,3 +1442,22 @@ body.sidebar-collapsed .main-content { margin-left: var(--sidebar-mini); }
   background: var(--bg3); padding: 12px; border-radius: 8px; margin-top: 8px;
 }
 .create-pl-form.visible { display: flex; }
+
+/* ── Thumbnail Generator ──────────────────────────────────── */
+.generated-thumbs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.generated-thumb {
+  width: 100%; aspect-ratio: 16/9;
+  object-fit: cover; border-radius: 6px;
+  cursor: pointer; border: 2px solid transparent;
+  opacity: 0.7; transition: all .2s;
+}
+.generated-thumb:hover { opacity: 1; }
+.generated-thumb.selected {
+  border-color: var(--blue); opacity: 1;
+  box-shadow: 0 0 0 2px rgba(62,166,255,0.3);
+}

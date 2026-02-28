@@ -187,6 +187,98 @@ function togglePostType(radio) {
   }
 }
 
+// ── Video Thumbnail Generator ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const videoInput = document.querySelector('input[name="video"]');
+  const thumbInput = document.querySelector('input[name="thumbnail"]');
+  
+  if (videoInput && thumbInput) {
+    // Create container for thumbnails
+    const container = document.createElement('div');
+    container.className = 'thumbnail-generator';
+    // Insert after video input
+    videoInput.parentNode.insertBefore(container, videoInput.nextSibling);
+
+    videoInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      container.innerHTML = '<div style="padding:10px;color:var(--text2);font-size:13px"><div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px"></div> Generating thumbnails...</div>';
+      
+      try {
+        const frames = await generateVideoFrames(file, 3);
+        container.innerHTML = '';
+        
+        const label = document.createElement('p');
+        label.style.fontSize = '13px';
+        label.style.color = 'var(--text2)';
+        label.style.marginBottom = '8px';
+        label.style.marginTop = '12px';
+        label.textContent = 'Select a thumbnail or upload your own:';
+        container.appendChild(label);
+
+        const grid = document.createElement('div');
+        grid.className = 'generated-thumbs-grid';
+        
+        frames.forEach((blob, idx) => {
+          const img = document.createElement('img');
+          img.src = URL.createObjectURL(blob);
+          img.className = 'generated-thumb';
+          img.onclick = () => {
+            // Visual selection
+            document.querySelectorAll('.generated-thumb').forEach(el => el.classList.remove('selected'));
+            img.classList.add('selected');
+            
+            // Update file input
+            const fileObj = new File([blob], "thumbnail.jpg", { type: "image/jpeg" });
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(fileObj);
+            thumbInput.files = dataTransfer.files;
+          };
+          grid.appendChild(img);
+        });
+        container.appendChild(grid);
+      } catch (err) {
+        console.error(err);
+        container.innerHTML = ''; // Fail silently or show error
+      }
+    });
+  }
+});
+
+async function generateVideoFrames(file, count) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.src = URL.createObjectURL(file);
+    video.muted = true;
+    video.playsInline = true;
+    
+    video.onloadedmetadata = async () => {
+      const duration = video.duration;
+      const blobs = [];
+      
+      for (let i = 0; i < count; i++) {
+        const time = Math.random() * (duration - 1); // Random time
+        video.currentTime = Math.max(0, Math.min(duration, time));
+        
+        await new Promise(r => {
+          const onSeek = () => { video.removeEventListener('seeked', onSeek); r(); };
+          video.addEventListener('seeked', onSeek);
+        });
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        blobs.push(await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8)));
+      }
+      URL.revokeObjectURL(video.src);
+      resolve(blobs);
+    };
+    video.onerror = reject;
+  });
+}
+
 function previewPostImage(input) {
   if (input.files && input.files[0]) {
     const reader = new FileReader();
