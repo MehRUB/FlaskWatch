@@ -7,65 +7,66 @@
     <a href="{{ url_for('studio') }}" class="back-link">← Back to Studio</a>
   </div>
 
-  <form method="post" enctype="multipart/form-data" class="upload-form">
+  <form method="post" enctype="multipart/form-data" class="edit-channel-form">
     <div class="form-group">
-      <label>Title *</label>
-      <input type="text" name="title" required class="form-input"
-             value="{{ video.title }}" placeholder="Enter video title">
-    </div>
-    <div class="form-group">
-      <label>Description</label>
-      <textarea name="description" class="form-input" rows="5"
-                placeholder="Describe your video...">{{ video.description or '' }}</textarea>
-    </div>
-    <div class="form-group">
-      <label>Visibility</label>
-      <select name="visibility" class="form-input">
-        {% set vis = video.visibility or 'public' %}
-        <option value="public"   {% if vis=='public' %}selected{% endif %}>Public</option>
-        <option value="unlisted" {% if vis=='unlisted' %}selected{% endif %}>Unlisted</option>
-        <option value="private"  {% if vis=='private' %}selected{% endif %}>Private (draft)</option>
-        <option value="scheduled" {% if vis=='scheduled' %}selected{% endif %}>Scheduled</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Schedule publish</label>
-      <input type="datetime-local" name="scheduled_at" class="form-input"
-             value="{{ (video.scheduled_at.replace(' ', 'T') if video.scheduled_at) or '' }}">
-      <div class="hint" style="margin-top:4px;font-size:12px">
-        Used when visibility is set to Scheduled.
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Thumbnail <span class="hint">(optional — replace current thumbnail)</span></label>
-      {% if video.thumbnail %}
-      <div style="margin-bottom:12px">
-        <img src="{{ url_for('uploaded_file', filename=video.thumbnail) }}"
-             style="max-width:280px;border-radius:8px;border:1px solid var(--border)" alt="Current thumbnail">
-        <p style="color:var(--text2);font-size:12px;margin-top:6px">Current thumbnail</p>
-      </div>
-      {% endif %}
-      <div class="file-drop" id="thumb-drop">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="#aaa"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-        <p>Click to upload a new thumbnail</p>
-        <input type="file" name="thumbnail" accept="image/*" id="thumb-input"
-               onchange="showName(this,'thumb-name')" style="position:absolute;inset:0;opacity:0;cursor:pointer">
-      </div>
-      <div id="thumb-name" class="file-name"></div>
+      <label for="title">Title</label>
+      <input type="text" name="title" id="title" class="form-input" value="{{ video.title }}" required>
     </div>
 
-    <div class="form-actions" style="margin-top:24px">
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea name="description" id="description" class="form-input" rows="5">{{ video.description }}</textarea>
+    </div>
+    
+    <div class="form-group">
+      <label for="tags">Tags <span class="hint">(comma-separated)</span></label>
+      <input type="text" name="tags" id="tags" class="form-input" value="{{ video.tags }}">
+    </div>
+
+    <div class="form-group">
+      <label>Current Thumbnail</label>
+      {% if video.thumbnail %}
+        <img src="{{ url_for('uploaded_file', filename=video.thumbnail) }}" alt="Current thumbnail" style="max-width: 240px; border-radius: 8px; display: block; margin-bottom: 16px;">
+      {% else %}
+        <p class="field-hint">No thumbnail set.</p>
+      {% endif %}
+      
+      <label for="thumbnail">Upload New Thumbnail</label>
+      <input type="file" name="thumbnail" id="thumbnail" class="form-input" accept="image/*">
+      
+      <div id="thumbnail-generator-edit" style="margin-top: 16px;">
+        <button type="button" id="generate-thumb-btn" class="btn btn-neutral" data-video-url="{{ url_for('uploaded_file', filename=video.filename) }}">
+          Generate from video
+        </button>
+        <div class="generated-thumbs-grid" id="generated-thumbs-grid-edit" style="margin-top: 12px;"></div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="visibility">Visibility</label>
+      <select name="visibility" id="visibility" class="form-input">
+        <option value="public" {% if video.visibility == 'public' %}selected{% endif %}>Public</option>
+        <option value="unlisted" {% if video.visibility == 'unlisted' %}selected{% endif %}>Unlisted</option>
+        <option value="private" {% if video.visibility == 'private' %}selected{% endif %}>Private</option>
+        <option value="scheduled" {% if video.visibility == 'scheduled' %}selected{% endif %}>Scheduled</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="scheduled-at-group" style="display: {% if video.visibility == 'scheduled' %}'block'{% else %}'none'{% endif %};">
+      <label for="scheduled_at">Scheduled Time</label>
+      <input type="datetime-local" name="scheduled_at" id="scheduled_at" class="form-input" value="{{ video.scheduled_at.replace(' ', 'T') if video.scheduled_at else '' }}">
+    </div>
+
+    <div class="form-actions">
       <a href="{{ url_for('studio') }}" class="cancel-btn">Cancel</a>
-      <button type="submit" class="submit-btn" style="width:auto;padding:12px 32px">Save Changes</button>
+      <button type="submit" class="submit-btn" style="width: auto;">Save Changes</button>
     </div>
   </form>
 </div>
 
 <script>
-function showName(input, targetId) {
-  if (input.files[0]) {
-    document.getElementById(targetId).textContent = '✓ ' + input.files[0].name;
-  }
-}
+document.getElementById('visibility').addEventListener('change', function() {
+  document.getElementById('scheduled-at-group').style.display = this.value === 'scheduled' ? 'block' : 'none';
+});
 </script>
 {% endblock %}
